@@ -24,21 +24,54 @@ data_source = st.radio("Source des données :", ("Yahoo Finance", "Fichier Excel
 if data_source == "Yahoo Finance":
     ticker = st.text_input("Entrez le symbole de l'actif :", "AAPL")
     if st.button("Charger les données"):
-        data = yf.download(ticker, period="1y")
-        st.line_chart(data["Close"])
+        try:
+            data = yf.download(ticker, period="1y")
+            if not data.empty and "Close" in data.columns:
+                st.line_chart(data["Close"])
+                
+                # Stockage des données dans une session state pour y accéder plus tard
+                st.session_state.data = data
+            else:
+                st.error(f"Aucune donnée trouvée pour le symbole {ticker}")
+        except Exception as e:
+            st.error(f"Erreur lors du téléchargement des données: {e}")
         
 elif data_source == "Fichier Excel":
     uploaded_file = st.file_uploader("Chargez un fichier Excel", type=["xlsx", "csv"])
     if uploaded_file:
-        data = pd.read_excel(uploaded_file) if uploaded_file.name.endswith(".xlsx") else pd.read_csv(uploaded_file)
-        st.line_chart(data["Close"])
+        try:
+            if uploaded_file.name.endswith(".xlsx"):
+                data = pd.read_excel(uploaded_file)
+            else:
+                data = pd.read_csv(uploaded_file, thousands=',')  # Gestion des séparateurs de milliers
+                
+            # S'assurer que la colonne Close existe
+            if "Close" in data.columns:
+                # Convertir les valeurs de type string en float si nécessaire
+                if data["Close"].dtype == object:
+                    data["Close"] = pd.to_numeric(data["Close"], errors='coerce')
+                
+                st.line_chart(data["Close"])
+                
+                # Stockage des données dans une session state
+                st.session_state.data = data
+            else:
+                st.error("La colonne 'Close' est introuvable dans le fichier")
+        except Exception as e:
+            st.error(f"Erreur lors du traitement du fichier: {e}")
 
 # Simulation et affichage des prévisions
-if 'data' in locals():
-    S0 = data["Close"].iloc[-1]
-    mu = data["Close"].mean()
-    sigma = data["Close"].std()
-    lambda_ = 0.1  # Valeur arbitraire, à calibrer
+if hasattr(st.session_state, 'data') and not st.session_state.data.empty:
+    data = st.session_state.data
     
-    prices = simulate_OU_process(S0, mu, sigma, lambda_)
-    st.line_chart(pd.DataFrame(prices, columns=["Prix prédit"]))
+    # Vérifier que la colonne Close existe et n'est pas vide
+    if "Close" in data.columns and not data["Close"].empty:
+        S0 = data["Close"].iloc[-1]
+        mu = data["Close"].mean()
+        sigma = data["Close"].std()
+        lambda_ = 0.1  # Valeur arbitraire, à calibrer
+        
+        prices = simulate_OU_process(S0, mu, sigma, lambda_)
+        st.line_chart(pd.DataFrame(prices, columns=["Prix prédit"]))
+    else:
+        st.warning("Impossible de simuler: la colonne 'Close' est vide ou inexistante")
