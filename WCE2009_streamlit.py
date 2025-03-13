@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timedelta
 from io import StringIO
 
 import matplotlib.pyplot as plt
@@ -6,6 +7,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+from scipy.stats import norm
 
 
 def generate_ig(a, b, size):
@@ -30,6 +32,17 @@ def simulate_ig_ou(X0, lambda_, a, b, T=30, dt=1/252):
         X[t] = np.exp(-lambda_*h)*X[t-1] + L
     
     return X[:30]  # Assurons-nous de renvoyer exactement 30 valeurs
+
+# Nouvelle fonction pour Black-Scholes
+def simulate_bs(S0, mu, sigma, days=30):
+    """Simule les prix avec un modèle de Black-Scholes"""
+    dt = 1/252
+    prices = [S0]
+    for _ in range(days-1):  # -1 car on a déjà S0
+        drift = (mu - 0.5 * sigma**2) * dt
+        shock = sigma * np.sqrt(dt) * np.random.normal()
+        prices.append(prices[-1] * np.exp(drift + shock))
+    return np.array(prices)
 
 def estimate_parameters(returns):
     """Estime μ, σ² et λ selon les formules du document (Section 3)"""
@@ -68,11 +81,12 @@ def main():
     st.title("Prédiction de Prix et Volatilité")
     
     # Sélection des données
-    data_source = st.selectbox("Source des données", ["Yahoo Finance", "Fichier Excel/CSV"])
+    data_source = st.selectbox("Source des données", ["Yahoo Finance", "Fichier Excel/CSV", "Données d'exemple"])
     
     # Initialisation des variables
     data = None
     returns = None
+    historical_prices = pd.Series()
     
     if data_source == "Yahoo Finance":
         with st.form("yahoo_form"):
@@ -108,7 +122,7 @@ def main():
                                 st.error("Les données ne contiennent pas de valeurs numériques")
                     except Exception as e:
                         st.error(f"Erreur lors du téléchargement: {str(e)}")
-    else:
+    elif data_source == "Fichier Excel/CSV":
         uploaded_file = st.file_uploader("Télécharger fichier", type=["xlsx", "csv"])
         if uploaded_file is not None:
             try:
@@ -157,6 +171,28 @@ def main():
                     st.error("Impossible de déterminer les prix de clôture")
             except Exception as e:
                 st.error(f"Erreur lors de la lecture du fichier: {str(e)}")
+    else:  # Données d'exemple
+        with st.spinner("Chargement des données d'exemple..."):
+            try:
+                # Essayer de charger le fichier BTC-USD.csv
+                data = pd.read_csv('BTC-USD.csv', parse_dates=['Date'], index_col='Date')
+                if 'Close' in data.columns:
+                    returns = data['Close'].pct_change(fill_method=None).dropna()
+                    st.success("Données d'exemple chargées avec succès")
+                    st.line_chart(data['Close'])
+                else:
+                    st.error("Format de données inattendu (pas de colonne 'Close')")
+            except FileNotFoundError:
+                st.error("Le fichier BTC-USD.csv n'a pas été trouvé")
+                # Créer des données d'exemple
+                dates = pd.date_range(start=datetime.now()-timedelta(days=365), periods=365)
+                close_prices = np.cumsum(np.random.normal(0, 1, 365)) + 100
+                data = pd.DataFrame({'Close': close_prices}, index=dates)
+                returns = data['Close'].pct_change(fill_method=None).dropna()
+                st.success("Données d'exemple générées avec succès")
+                st.line_chart(data['Close'])
+            except Exception as e:
+                st.error(f"Erreur lors du chargement des données d'exemple: {str(e)}")
     
     # Vérifier que nous avons des données à traiter
     if data is not None and returns is not None and not returns.empty:
@@ -179,7 +215,12 @@ def main():
         a = st.sidebar.number_input("Paramètre a (IG)", 1e-10, 10.0, 2.2395e-7, format="%.7e")
         b = st.sidebar.number_input("Paramètre b (IG)", 0.1, 10.0, 1.0)
         
-        # Simulation de la volatilité
+        # Modèles à utiliser
+        st.sidebar.header("Modèles de prédiction")
+        use_igou = st.sidebar.checkbox("Modèle IG-OU", value=True)
+        use_bs = st.sidebar.checkbox("Modèle Black-Scholes", value=True)
+        
+        # Simulation de la volatilité et des prix
         vol_paths = np.zeros((n_simulations, 30))
         price_paths = np.zeros((n_simulations, 30))
         
@@ -190,67 +231,146 @@ def main():
             # Éviter les valeurs extrêmes pour la volatilité initiale
             init_vol = max(min(returns.std(), 0.05), 0.001)
             
-            for i in range(n_simulations):
-                try:
-                    vol = simulate_ig_ou(X0=init_vol,
-                                        lambda_=max(lambda_, 0.001),
-                                        a=a, 
-                                        b=b)
-                    
-                    # Simulation des prix
-                    prices = [last_price]
-                    for t in range(29):
-                        drift = mu  # Simplification pour éviter vol[t]**2 qui peut causer des problèmes
-                        shock = vol[t] * np.random.normal()
-                        prices.append(prices[-1] * np.exp(drift + shock))
-                    
-                    vol_paths[i] = vol[:30]
-                    price_paths[i] = prices
-                except Exception as e:
-                    st.error(f"Erreur simulation {i+1}: {str(e)}")
-                    continue
+            # Essayer de charger les données historiques
+            try:
+                historical_data = pd.read_csv('BTC-USD.csv', parse_dates=['Date'], index_col='Date')
+                historical_prices = historical_data['Close'].iloc[-60:]  # 60 dernières valeurs
+            except Exception:
+                historical_prices = pd.Series()
+            
+            if use_igou:
+                for i in range(n_simulations):
+                    try:
+                        vol = simulate_ig_ou(X0=init_vol,
+                                            lambda_=max(lambda_, 0.001),
+                                            a=a, 
+                                            b=b)
+                        
+                        # Simulation des prix
+                        prices = [last_price]
+                        for t in range(29):
+                            drift = mu  # Simplification pour éviter vol[t]**2 qui peut causer des problèmes
+                            shock = vol[t] * np.random.normal()
+                            prices.append(prices[-1] * np.exp(drift + shock))
+                        
+                        vol_paths[i] = vol[:30]
+                        price_paths[i] = prices
+                    except Exception as e:
+                        st.error(f"Erreur simulation IG-OU {i+1}: {str(e)}")
+                        continue
+
+            # Simulation Black-Scholes
+            if use_bs:
+                bs_prices = simulate_bs(last_price, mu, returns.std(), days=30)
+            else:
+                bs_prices = None
             
             # Visualisation
             st.subheader("Résultats de simulation")
             
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+            # Configuration des graphiques selon les modèles sélectionnés
+            if use_igou and use_bs:
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+                
+                # Graphique de prix combiné
+                if not historical_prices.empty:
+                    # Si nous avons des données historiques, les afficher
+                    dates = pd.date_range(end=datetime.now(), periods=len(historical_prices))
+                    ax1.plot(dates, historical_prices, 'b-', lw=2, label='Données historiques')
+                
+                # Simulation IG-OU
+                for path in price_paths:
+                    ax1.plot(range(30), path, lw=1, alpha=0.1, color='red')
+                mean_price = np.mean(price_paths, axis=0)
+                ax1.plot(range(30), mean_price, 'r--', lw=2, label='Prédiction IG-OU (Moyenne)')
+                
+                # Simulation Black-Scholes
+                ax1.plot(range(30), bs_prices, 'orange', lw=2, label='Prédiction Black-Scholes')
+                
+                ax1.set_title('Comparaison des modèles sur 30 jours')
+                ax1.legend()
+                ax1.grid(True)
+                
+                # Graphique de volatilité
+                for path in vol_paths:
+                    ax2.plot(path, lw=1, alpha=0.1, color='green')
+                mean_vol = np.mean(vol_paths, axis=0)
+                ax2.plot(mean_vol, lw=2, color='green', label='Volatilité moyenne')
+                ax2.set_title('Projection de la volatilité sur 30 jours (IG-OU)')
+                ax2.legend()
+                ax2.grid(True)
+                
+            elif use_igou:
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+                
+                # Prix IG-OU
+                for path in price_paths:
+                    ax1.plot(path, lw=1, alpha=0.1, color='blue')
+                mean_price = np.mean(price_paths, axis=0)
+                ax1.plot(mean_price, lw=2, color='blue', label='Moyenne')
+                ax1.set_title('Projection des prix sur 30 jours (IG-OU)')
+                ax1.legend()
+                ax1.grid(True)
+                
+                # Volatilité IG-OU
+                for path in vol_paths:
+                    ax2.plot(path, lw=1, alpha=0.1, color='red')
+                mean_vol = np.mean(vol_paths, axis=0)
+                ax2.plot(mean_vol, lw=2, color='red', label='Moyenne')
+                ax2.set_title('Projection de la volatilité sur 30 jours (IG-OU)')
+                ax2.legend()
+                ax2.grid(True)
+                
+            elif use_bs:
+                fig, ax = plt.subplots(figsize=(12, 8))
+                ax.plot(bs_prices, 'orange', lw=2, label='Prédiction Black-Scholes')
+                ax.set_title('Projection des prix sur 30 jours (Black-Scholes)')
+                ax.legend()
+                ax.grid(True)
+            else:
+                st.warning("Aucun modèle sélectionné pour la simulation")
+                fig = None
             
-            # Prix
-            for path in price_paths:
-                ax1.plot(path, lw=1, alpha=0.1, color='blue')
-            # Ajouter la moyenne des chemins
-            mean_price = np.mean(price_paths, axis=0)
-            ax1.plot(mean_price, lw=2, color='blue', label='Moyenne')
-            ax1.set_title('Projection des prix sur 30 jours')
-            ax1.legend()
-            
-            # Volatilité
-            for path in vol_paths:
-                ax2.plot(path, lw=1, alpha=0.1, color='red')
-            # Ajouter la moyenne des chemins
-            mean_vol = np.mean(vol_paths, axis=0)
-            ax2.plot(mean_vol, lw=2, color='red', label='Moyenne')
-            ax2.set_title('Projection de la volatilité sur 30 jours')
-            ax2.legend()
-            
-            st.pyplot(fig)
+            if fig:
+                st.pyplot(fig)
             
             # Afficher tableau avec valeurs de prédiction
-            days = list(range(1, 31))
-            forecast_df = pd.DataFrame({
-                'Jour': days,
-                'Prix moyen': mean_price,
-                'Volatilité moyenne': mean_vol
-            })
-            
             st.subheader("Prévisions numériques")
+            
+            days = list(range(1, 31))
+            forecast_data = {'Jour': days}
+            
+            if use_igou:
+                mean_price_igou = np.mean(price_paths, axis=0)
+                mean_vol_igou = np.mean(vol_paths, axis=0)
+                forecast_data['Prix moyen (IG-OU)'] = mean_price_igou
+                forecast_data['Volatilité moyenne (IG-OU)'] = mean_vol_igou
+                
+            if use_bs:
+                forecast_data['Prix (Black-Scholes)'] = bs_prices
+            
+            forecast_df = pd.DataFrame(forecast_data)
             st.dataframe(forecast_df)
             
-            # Statistiques
+            # Statistiques et interprétation
             st.subheader("Statistiques estimées")
             st.write(f"Moyenne estimée (μ): {mu:.6f}")
             st.write(f"Variance estimée (σ²): {sigma_sq:.6f}")
             st.write(f"Lambda estimé (λ): {lambda_:.4f}")
+            
+            # Explication des modèles
+            with st.expander("À propos des modèles utilisés"):
+                st.markdown("""
+                ### Modèle IG-OU
+                Le modèle IG-OU (Inverse Gaussian - Ornstein-Uhlenbeck) est une extension du modèle de volatilité stochastique. 
+                Il utilise la distribution Inverse Gaussienne pour modéliser la volatilité, ce qui permet de capturer les sauts et 
+                les distributions asymétriques des rendements financiers.
+                
+                ### Modèle Black-Scholes
+                Le modèle Black-Scholes est un modèle classique en finance qui suppose que les prix des actifs suivent un mouvement 
+                brownien géométrique avec volatilité constante. Il repose sur l'hypothèse que les marchés sont efficaces et 
+                que les rendements sont normalement distribués.
+                """)
         else:
             st.error("Données insuffisantes pour la simulation")
 
