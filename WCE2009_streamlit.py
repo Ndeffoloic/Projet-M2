@@ -1,4 +1,5 @@
 import time
+from io import StringIO
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,21 +33,23 @@ def simulate_ig_ou(X0, lambda_, a, b, T=30, dt=1/252):
 
 def estimate_parameters(returns):
     """Estime μ, σ² et λ selon les formules du document (Section 3)"""
-    # Vérification que returns n'est pas vide
+    # Vérification que returns n'est pas vide ou contient des NaN
+    returns = returns.dropna()
     if len(returns) <= 1:
-        return 0.0, 0.01, 0.1  # Valeurs par défaut
+        return 0.0001, 0.01, 0.1  # Valeurs par défaut
     
-    mu = np.mean(returns)
-    sigma_sq = 2 * np.var(returns)
+    mu = returns.mean()
+    sigma_sq = 2 * returns.var()
     
     # Calcul sécurisé de l'autocorrélation lag-1
     if len(returns) > 1:
         try:
-            rho1 = np.corrcoef(returns[:-1], returns[1:])[0,1]
+            # Utiliser pandas pour l'autocorrélation, plus robuste contre les NaN
+            rho1 = returns.autocorr(lag=1)
             # Vérifier si rho1 est NaN
-            if np.isnan(rho1):
+            if pd.isna(rho1):
                 rho1 = 0.1  # Valeur par défaut
-        except:
+        except Exception:
             rho1 = 0.1  # En cas d'erreur
     else:
         rho1 = 0.1
@@ -54,6 +57,8 @@ def estimate_parameters(returns):
     # Éviter un lambda négatif ou zéro
     if rho1 >= 0.999:
         rho1 = 0.999
+    elif rho1 <= 0:
+        rho1 = 0.001
         
     lambda_ = -np.log(max(rho1, 1e-6))
     
@@ -65,35 +70,42 @@ def main():
     # Sélection des données
     data_source = st.selectbox("Source des données", ["Yahoo Finance", "Fichier Excel/CSV"])
     
+    # Initialisation des variables
     data = None
     returns = None
     
     if data_source == "Yahoo Finance":
         with st.form("yahoo_form"):
             ticker = st.text_input("Symbole Yahoo Finance (ex: AAPL)", "AAPL")
+            period = st.selectbox("Période", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
             submit_button = st.form_submit_button("Télécharger")
             
             if submit_button:
                 # Afficher un message de chargement
                 with st.spinner('Téléchargement des données...'):
                     try:
-                        # Essayer jusqu'à 3 fois en cas d'échec
+                        # Utiliser des proxies et multiple tentatives
                         for attempt in range(3):
                             try:
-                                data = yf.download(ticker, period="1y")
+                                data = yf.download(ticker, period=period, progress=False)
                                 if not data.empty and 'Close' in data.columns:
                                     break
-                            except:
+                            except Exception as e:
+                                st.warning(f"Tentative {attempt+1}: {str(e)}")
                                 if attempt < 2:
-                                    time.sleep(1)  # Attendez un peu avant de réessayer
+                                    time.sleep(1)  # Attendre avant de réessayer
                                 continue
                         
                         if data is None or data.empty or 'Close' not in data.columns:
                             st.error(f"Impossible de récupérer les données pour {ticker}")
                         else:
                             st.success(f"Données téléchargées pour {ticker}")
-                            returns = data['Close'].pct_change().dropna()
-                            st.line_chart(data['Close'])
+                            # Vérifier que Close contient des données numériques
+                            if data['Close'].dtype.kind in 'iuf':  # i: int, u: uint, f: float
+                                returns = data['Close'].pct_change(fill_method=None).dropna()
+                                st.line_chart(data['Close'])
+                            else:
+                                st.error("Les données ne contiennent pas de valeurs numériques")
                     except Exception as e:
                         st.error(f"Erreur lors du téléchargement: {str(e)}")
     else:
@@ -104,7 +116,19 @@ def main():
                 if uploaded_file.name.endswith('.xlsx'):
                     data = pd.read_excel(uploaded_file)
                 else:  # CSV
-                    data = pd.read_csv(uploaded_file)
+                    # Essayer différentes options de parsing pour CSV
+                    try:
+                        # Essayer d'abord le format standard
+                        data = pd.read_csv(uploaded_file)
+                    except:
+                        # Réinitialiser le curseur du fichier
+                        uploaded_file.seek(0)
+                        # Essayer avec différents séparateurs et la gestion des milliers
+                        data = pd.read_csv(uploaded_file, sep=None, engine='python', thousands=',')
+                
+                # Afficher les premières lignes pour vérification
+                st.write("Aperçu des données:")
+                st.write(data.head())
                 
                 # Vérifier que la colonne 'Close' existe
                 if 'Close' not in data.columns:
@@ -117,8 +141,18 @@ def main():
                 # Convertir en nombres si nécessaire
                 if 'Close' in data.columns:
                     data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
-                    returns = data['Close'].pct_change().dropna()
-                    st.line_chart(data['Close'])
+                    # Vérifier et alerter l'utilisateur sur les valeurs manquantes
+                    missing = data['Close'].isna().sum()
+                    if missing > 0:
+                        st.warning(f"{missing} valeurs manquantes trouvées et ignorées.")
+                    
+                    # Calculer les rendements en ignorant les valeurs manquantes
+                    returns = data['Close'].dropna().pct_change(fill_method=None).dropna()
+                    
+                    if len(returns) > 0:
+                        st.line_chart(data['Close'].dropna())
+                    else:
+                        st.error("Impossible de calculer les rendements. Données insuffisantes.")
                 else:
                     st.error("Impossible de déterminer les prix de clôture")
             except Exception as e:
@@ -126,6 +160,16 @@ def main():
     
     # Vérifier que nous avons des données à traiter
     if data is not None and returns is not None and not returns.empty:
+        # Afficher les statistiques des données
+        st.subheader("Statistiques des rendements")
+        stats_df = pd.DataFrame({
+            'Moyenne': [returns.mean()],
+            'Écart-type': [returns.std()],
+            'Min': [returns.min()],
+            'Max': [returns.max()]
+        })
+        st.write(stats_df)
+        
         # Estimation des paramètres
         mu, sigma_sq, lambda_ = estimate_parameters(returns)
         
@@ -140,24 +184,31 @@ def main():
         price_paths = np.zeros((n_simulations, 30))
         
         # Vérifier que l'accès à la dernière valeur est sûr
-        if len(data['Close'].dropna()) > 0:
+        if data['Close'].dropna().shape[0] > 0:
             last_price = data['Close'].dropna().iloc[-1]
             
+            # Éviter les valeurs extrêmes pour la volatilité initiale
+            init_vol = max(min(returns.std(), 0.05), 0.001)
+            
             for i in range(n_simulations):
-                vol = simulate_ig_ou(X0=max(returns.std(), 0.001),  # Éviter zéro
-                                    lambda_=max(lambda_, 0.001),    # Éviter zéro
-                                    a=a, 
-                                    b=b)
-                
-                # Simulation des prix
-                prices = [last_price]
-                for t in range(29):
-                    drift = mu  # Simplification pour éviter vol[t]**2 qui peut causer des problèmes
-                    shock = vol[t] * np.random.normal()
-                    prices.append(prices[-1] * np.exp(drift + shock))
-                
-                vol_paths[i] = vol[:30]
-                price_paths[i] = prices
+                try:
+                    vol = simulate_ig_ou(X0=init_vol,
+                                        lambda_=max(lambda_, 0.001),
+                                        a=a, 
+                                        b=b)
+                    
+                    # Simulation des prix
+                    prices = [last_price]
+                    for t in range(29):
+                        drift = mu  # Simplification pour éviter vol[t]**2 qui peut causer des problèmes
+                        shock = vol[t] * np.random.normal()
+                        prices.append(prices[-1] * np.exp(drift + shock))
+                    
+                    vol_paths[i] = vol[:30]
+                    price_paths[i] = prices
+                except Exception as e:
+                    st.error(f"Erreur simulation {i+1}: {str(e)}")
+                    continue
             
             # Visualisation
             st.subheader("Résultats de simulation")
@@ -168,7 +219,8 @@ def main():
             for path in price_paths:
                 ax1.plot(path, lw=1, alpha=0.1, color='blue')
             # Ajouter la moyenne des chemins
-            ax1.plot(np.mean(price_paths, axis=0), lw=2, color='blue', label='Moyenne')
+            mean_price = np.mean(price_paths, axis=0)
+            ax1.plot(mean_price, lw=2, color='blue', label='Moyenne')
             ax1.set_title('Projection des prix sur 30 jours')
             ax1.legend()
             
@@ -176,11 +228,23 @@ def main():
             for path in vol_paths:
                 ax2.plot(path, lw=1, alpha=0.1, color='red')
             # Ajouter la moyenne des chemins
-            ax2.plot(np.mean(vol_paths, axis=0), lw=2, color='red', label='Moyenne')
+            mean_vol = np.mean(vol_paths, axis=0)
+            ax2.plot(mean_vol, lw=2, color='red', label='Moyenne')
             ax2.set_title('Projection de la volatilité sur 30 jours')
             ax2.legend()
             
             st.pyplot(fig)
+            
+            # Afficher tableau avec valeurs de prédiction
+            days = list(range(1, 31))
+            forecast_df = pd.DataFrame({
+                'Jour': days,
+                'Prix moyen': mean_price,
+                'Volatilité moyenne': mean_vol
+            })
+            
+            st.subheader("Prévisions numériques")
+            st.dataframe(forecast_df)
             
             # Statistiques
             st.subheader("Statistiques estimées")
@@ -191,4 +255,10 @@ def main():
             st.error("Données insuffisantes pour la simulation")
 
 if __name__ == "__main__":
+    # Configuration de la page
+    st.set_page_config(
+        page_title="Prédiction Prix & Volatilité",
+        page_icon="📈",
+        layout="wide"
+    )
     main()
