@@ -12,12 +12,29 @@ from scipy.stats import norm
 
 def generate_ig(a, b, size):
     """Génère des variables aléatoires Inverse Gaussiennes (Algorithme du document)"""
+    # Éviter les problèmes si a ou b sont très proches de 0
+    a = max(a, 1e-10)
+    b = max(b, 1e-10)
+    
     N = np.random.normal(0, 1, size)
     Y = N**2
     X1 = (a/b) + Y/(2*b**2) - np.sqrt(4*a*b*Y + Y**2)/(2*b**2)
+    
+    # Éviter les valeurs nulles pour X1
+    X1 = np.maximum(X1, 1e-10)
+    
     U = np.random.uniform(0, 1, size)
     mask = U <= a/(a + X1*b)
-    X = np.where(mask, X1, a**2/(b**2*X1))
+    
+    # Calculer la seconde valeur possible en gérant les divisions par zéro
+    second_value = np.zeros_like(X1)
+    np.divide(a**2, b**2 * X1, out=second_value, where=X1!=0)
+    
+    # Si X1=0, utiliser une valeur très grande mais finie
+    second_value[X1 == 0] = 1e10
+    
+    # Sélectionner X1 ou second_value selon le masque
+    X = np.where(mask, X1, second_value)
     return X
 
 def simulate_ig_ou(X0, lambda_, a, b, T=30, dt=1/252):
