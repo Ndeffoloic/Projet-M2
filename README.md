@@ -1,4 +1,3 @@
-```markdown
 # 📈 IG-OU Asset Price Prediction - Implementation of WCE 2009 Paper
 
 **Implementation of the paper:**  
@@ -8,90 +7,130 @@
 ## 🔍 Overview
 Ce projet implémente le modèle IG-OU (Inverse Gaussian Ornstein-Uhlenbeck) décrit dans l'article WCE 2009 pour la prédiction des prix d'actifs financiers. L'application Streamlit permet de :
 
-- Sélectionner entre 2 actifs prédéfinis (BTC ou GLE.PA)
-- Choisir un échelonnage temporel (minute/heure/jour/semaine/mois)
-- Visualiser les simulations de prix et volatilité
+- Charger des données depuis Yahoo Finance ou des fichiers locaux
+- Visualiser et analyser les données historiques
+- Simuler les prix futurs avec le modèle IG-OU
 - Comparer avec le modèle Black-Scholes classique
+- Analyser la surface de volatilité
 
 ## 📚 Fondements Théoriques (Article WCE 2009)
 ### Composants clés implémentés :
 1. **Processus IG-OU** (Section III)
-   - `models.IGOUModel` : Implémente l'équation 3.17 de simulation
-   - Algorithme de génération IG (Section 3.16) dans `IGOUModel.generate_ig()`
+   - Implémentation rigoureuse de l'équation 3.17
+   - Algorithme optimisé de génération IG
+   - Gestion robuste des cas limites
 
 2. **Estimation des paramètres** (Section III.C)
-   - Méthode des moments (Équations 3.15) dans `parameter_estimator.ParameterEstimator`
-   - Autocorrélation exponentielle (Théorème p.3) pour l'estimation de λ
+   - Méthode des moments avec validation
+   - Estimation robuste de λ par autocorrélation
+   - Gestion des données manquantes et aberrantes
 
 3. **Modélisation de la volatilité** 
-   - Lien volume/volatilité (Équation 4.5) avec γ=2.2395e-7 (valeur par défaut dans l'UI)
+   - Surface de volatilité dynamique
+   - Clustering et mean-reversion
+   - Comparaison avec Black-Scholes
 
-### Ajustements par rapport à l'article :
-- Utilisation de données prétraitées au lieu de l'API Yahoo Finance
-- Implémentation modularisée suivant les principes SOLID
-- Ajout d'une interface visuelle avec Streamlit
-
-## ⚙️ Structure du Code
+## ⚙️ Structure du Projet
 ```bash
-.
-├── app.py               # Interface principale
-├── data_loader.py       # Chargement des données Excel (Section IV.A)
-├── models.py            # Implémentation IG-OU/Black-Scholes (Section III)
-├── parameter_estimator.py # Estimation μ, σ², λ (Section III.C)
-└── assets/              # Données prétraitées par échelonnage
-    ├── minute/
-    │   ├── BTC.csv
-    │   └── GLE.PA.csv
-    └── .../
+project/
+├── app.py                  # Application principale Streamlit
+├── core/                   # Cœur métier
+│   ├── models/            # Modèles mathématiques
+│   │   ├── ig_ou.py      # Modèle IG-OU (Eq. 3.17)
+│   │   └── black_scholes.py
+│   ├── estimators/       # Estimation des paramètres
+│   │   └── parameters.py
+│   └── data/            # Gestion des données
+│       └── loader.py
+├── ui/                   # Interface utilisateur
+│   ├── components/      # Composants Streamlit
+│   │   ├── sidebar.py
+│   │   └── visualizations.py
+│   └── helpers.py
+└── tests/               # Tests unitaires et d'intégration
+    ├── test_financial_models.py
+    ├── test_data_handling.py
+    ├── test_volatility_modeling.py
+    ├── test_streamlit_ui.py
+    └── test_performance.py
 ```
 
 ## 🚀 Installation
-1. **Environnement virtuel :**
+
+1. **Cloner le dépôt :**
+```bash
+git clone https://github.com/votre-username/votre-repo.git
+cd votre-repo
+```
+
+2. **Créer un environnement virtuel :**
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 ```
 
-2. **Dépendances :**
+3. **Installer les dépendances :**
 ```bash
 pip install -r requirements.txt
 ```
 
-Contenu de `requirements.txt` :
-```
-streamlit==1.22.0
-numpy==1.23.5
-pandas==1.5.3
-matplotlib==3.7.0
-scipy==1.10.0
-```
+## 🖥️ Utilisation
 
-3. **Lancer l'application :**
+### Lancer l'application
 ```bash
 streamlit run app.py
 ```
 
-## 🖥️ Usage
-1. Sélectionner un actif et un échelonnage
-2. Ajuster les paramètres de simulation dans la sidebar
-3. Visualiser les prédictions interactives
-4. Comparer les modèles IG-OU vs Black-Scholes
+### Options disponibles
+1. **Source des données :**
+   - Yahoo Finance (temps réel)
+   - Fichiers Excel/CSV
+   - Données d'exemple préchargées
 
-## 📌 Notes importantes
-- Les données doivent être structurées comme suit :
-  ```csv
-  Date,Close
-  2023-01-01 00:00:00,42000.0
-  2023-01-01 00:01:00,42012.5
-  ...
-  ```
-- La valeur par défaut du paramètre `a=2.2395e-7` provient de l'étude sur General Motors (Section IV.B)
+2. **Paramètres de simulation :**
+   - Nombre de simulations
+   - Horizon de prédiction
+   - Choix du modèle (IG-OU, Black-Scholes, ou les deux)
+
+3. **Visualisations :**
+   - Données historiques et rendements
+   - Surface de volatilité
+   - Comparaison des modèles
+   - Intervalles de confiance
+
+## 🧪 Tests
+Le projet inclut une suite de tests complète :
+
+```bash
+# Exécuter tous les tests
+python -m pytest tests/
+
+# Tests spécifiques
+python -m pytest tests/test_financial_models.py
+python -m pytest tests/test_performance.py
+```
+
+## 📊 Validation des Données
+- Vérification automatique de la qualité des données
+- Détection des valeurs aberrantes
+- Gestion des données manquantes
+- Validation de la fréquence d'échantillonnage
+
+## 📌 Notes Importantes
+1. **Performance :**
+   - Optimisation vectorielle avec NumPy
+   - Gestion efficace de la mémoire
+   - Tests de performance intégrés
+
+2. **Limitations :**
+   - Les paramètres par défaut peuvent nécessiter un ajustement
+   - La qualité des prédictions dépend des données d'entrée
+   - Utilisation académique recommandée
 
 ## 📚 Références
 - [1] Ö. Önalan (2009). *Financial Modelling with Ornstein-Uhlenbeck Processes...* WCE 2009
 - [2] Barndorff-Nielsen & Shephard (2001). *Non-Gaussian OU-based models...*
 
 ## ⚠️ Disclaimer
-Ce projet est une implémentation académique. Ne pas utiliser pour des décisions financières réelles. Les paramètres par défaut peuvent nécessiter un réétalonnage pour des actifs spécifiques.
-```
+Ce projet est une implémentation académique. Ne pas utiliser pour des décisions financières réelles sans validation approfondie.
