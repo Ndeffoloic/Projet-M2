@@ -2,3 +2,4 @@
 /pyVenv
 .pyc
 .cpython
+*.*.pyc
