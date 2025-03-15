@@ -1,160 +1,92 @@
+"""Main application module for the IG-OU asset price prediction."""
 import streamlit as st
 import numpy as np
-import pandas as pd
-from typing import Optional, Tuple
+import matplotlib.pyplot as plt
 
-# Import des composants core
-from core.models.ig_ou import IGOUProcess
-from core.models.black_scholes import BSModel
-from core.estimators.parameters import IGParameterEstimator, BSParameterEstimator
-from core.data.loader import AssetLoader
-
-# Import des composants UI
-from ui.components.sidebar import Sidebar
-from ui.components.visualizations import VolatilityPlotter
-from ui.helpers import (
-    display_error,
-    display_success,
-    display_info,
-    display_parameters,
-    format_data_summary,
-    check_data_quality
-)
-
-def load_data(config: dict) -> Optional[pd.Series]:
-    """
-    Charge les données selon la configuration
-    
-    Args:
-        config: Configuration de l'application
-        
-    Returns:
-        Optional[pd.Series]: Série temporelle des prix ou None si erreur
-    """
-    loader = AssetLoader()
-    try:
-        if config['source'] == 'yahoo':
-            return loader.load_from_yahoo(config['symbol'], config['period'])
-        elif config['source'] == 'file':
-            if config['file'] is None:
-                display_info("Veuillez télécharger un fichier")
-                return None
-            return loader.load_from_file(config['file'], config['date_column'], config['price_column'])
-        else:  # example
-            return loader.load_from_file(config['asset'], config['timeframe'])
-    except Exception as e:
-        display_error(f"Erreur lors du chargement des données: {str(e)}")
-        return None
-
-def run_simulations(
-    prices: pd.Series,
-    config: dict
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-    """
-    Exécute les simulations selon le modèle choisi
-    
-    Args:
-        prices: Série temporelle des prix
-        config: Configuration de l'application
-        
-    Returns:
-        Tuple[Optional[np.ndarray], Optional[np.ndarray]]: 
-            Trajectoires IG-OU et Black-Scholes (None si non calculées)
-    """
-    # Calcul des rendements
-    returns = prices.pct_change().dropna()
-    
-    # Initialisation des résultats
-    ig_paths = None
-    bs_paths = None
-    
-    try:
-        if config['model'] in ['IG-OU', 'Les deux']:
-            # Estimation des paramètres IG-OU
-            ig_params = IGParameterEstimator.estimate(returns)
-            display_parameters(ig_params)
-            
-            # Simulation IG-OU
-            model = IGOUProcess(
-                lambda_=ig_params['lambda_'],
-                a=np.sqrt(ig_params['sigma_sq']),
-                b=1.0
-            )
-            
-            ig_paths = np.array([
-                model.simulate(returns.std(), config['horizon'])
-                for _ in range(config['n_simulations'])
-            ])
-        
-        if config['model'] in ['Black-Scholes', 'Les deux']:
-            # Estimation des paramètres BS
-            bs_params = BSParameterEstimator.estimate(returns)
-            if config['model'] == 'Black-Scholes':
-                display_parameters(bs_params)
-            
-            # Simulation Black-Scholes
-            model = BSModel(mu=bs_params['mu'], sigma=bs_params['sigma'])
-            bs_paths = np.array([
-                model.simulate(prices.iloc[-1], config['horizon'])
-                for _ in range(config['n_simulations'])
-            ])
-        
-        return ig_paths, bs_paths
-    
-    except Exception as e:
-        display_error(f"Erreur lors des simulations: {str(e)}")
-        return None, None
+from core.data.loader import load_asset_data
+from core.models.ig_ou import IGOUModel
+from core.models.black_scholes import BlackScholesModel
+from core.estimators.parameters import ParameterEstimator
+from ui.components.sidebar import render_sidebar
+from ui.components.visualizations import plot_predictions, plot_volatility
+from ui.helpers import show_statistics
 
 def main():
-    """Point d'entrée principal de l'application"""
+    """Main application entry point."""
     st.set_page_config(
         page_title="Prédiction Prix & Volatilité",
         page_icon="📈",
         layout="wide"
     )
     
-    st.title("Prédiction de Prix et Volatilité")
-    st.markdown("""
-    Cette application implémente un modèle de volatilité stochastique IG-OU
-    et le compare au modèle classique de Black-Scholes.
-    """)
+    st.title("Prédiction de Prix des Actifs avec Modèle IG-OU")
     
-    # Chargement de la configuration
-    config = Sidebar.render()
+    # Get configuration from sidebar
+    config = render_sidebar()
     
-    # Chargement des données
-    prices = load_data(config)
-    if prices is None:
+    # Load data
+    price_series = load_asset_data(config["asset"], config["timeframe"])
+    if price_series is None:
         return
     
-    # Vérification de la qualité des données
-    valid, issues = check_data_quality(prices)
-    if not valid:
-        st.warning("⚠️ Problèmes détectés dans les données:")
-        for issue in issues:
-            st.write(f"- {issue}")
+    # Display historical data
+    st.subheader(f"Données historiques - {config['asset']} ({config['timeframe']})")
+    st.line_chart(price_series)
     
-    # Affichage du résumé des données
-    format_data_summary(prices)
+    # Calculate returns and estimate parameters
+    returns = price_series.pct_change().dropna()
+    mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(returns)
+    bs_mu, bs_sigma = ParameterEstimator.estimate_bs_parameters(returns)
     
-    # Affichage des données historiques
-    returns = prices.pct_change().dropna()
-    VolatilityPlotter.plot_historical_data(prices, returns)
+    # Initialize models
+    igou_model = IGOUModel(lambda_, config["a"], config["b"])
+    bs_model = BlackScholesModel(bs_mu, bs_sigma)
     
-    # Simulation et affichage des résultats
-    ig_paths, bs_paths = run_simulations(prices, config)
+    # Run simulations
+    if st.button("Lancer la simulation"):
+        run_simulations(
+            price_series.iloc[-1],
+            igou_model,
+            bs_model,
+            config["n_simulations"],
+            returns.std()
+        )
+
+def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackScholesModel, 
+                   n_simulations: int, init_vol: float):
+    """Execute and display simulations.
     
-    if ig_paths is not None or bs_paths is not None:
-        st.subheader("Résultats des simulations")
-        
-        if config['model'] == 'IG-OU':
-            VolatilityPlotter.plot_volatility_surface(
-                ig_paths,
-                np.arange(config['horizon']),
-                "Surface de Volatilité IG-OU"
-            )
-        elif config['model'] == 'Les deux':
-            VolatilityPlotter.plot_comparison(ig_paths, bs_paths)
+    Args:
+        last_price: Last observed price
+        igou_model: IG-OU model instance
+        bs_model: Black-Scholes model instance
+        n_simulations: Number of simulations to run
+        init_vol: Initial volatility
+    """
+    # Simulation IG-OU
+    vol_paths = np.zeros((n_simulations, 30))
+    price_paths = np.zeros((n_simulations, 30))
+    
+    for i in range(n_simulations):
+        vol = igou_model.simulate(init_vol)
+        prices = [last_price]
+        for t in range(29):
+            shock = vol[t] * np.random.normal()
+            prices.append(prices[-1] * np.exp(igou_model.mu + shock))
+        price_paths[i] = prices
+        vol_paths[i] = vol
+    
+    # Simulation Black-Scholes
+    bs_prices = bs_model.simulate(last_price)
+    
+    # Create visualization
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+    plot_predictions(ax1, price_paths, bs_prices)
+    plot_volatility(ax2, vol_paths)
+    st.pyplot(fig)
+    
+    # Show statistics
+    show_statistics(price_paths, vol_paths, bs_prices)
 
 if __name__ == "__main__":
     main()

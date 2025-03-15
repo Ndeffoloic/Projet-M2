@@ -1,74 +1,55 @@
+"""Parameter estimation module for financial models."""
 import numpy as np
 import pandas as pd
-from typing import Dict, Union, Optional
 
-class IGParameterEstimator:
-    """Estimateur des paramètres selon les équations (3.15) et (3.16) du document"""
+class ParameterEstimator:
+    """Parameter estimation for IG-OU and Black-Scholes models."""
     
     @staticmethod
-    def estimate(returns: pd.Series, d: int = 5) -> Dict[str, float]:
-        """
-        Estime les paramètres du modèle IG-OU à partir des rendements
+    def estimate_igou_parameters(returns: pd.Series) -> tuple:
+        """Estimate parameters for the IG-OU model using method of moments.
         
         Args:
-            returns: Série temporelle des rendements
-            d: Nombre de lags pour l'estimation de lambda
+            returns: Series of asset returns
             
         Returns:
-            dict: Dictionnaire contenant mu, sigma_sq et lambda_
+            tuple: (mu, sigma_sq, lambda_) parameters
         """
         returns = returns.dropna()
         if len(returns) < 2:
-            return {'mu': 0.0001, 'sigma_sq': 0.01, 'lambda_': 0.1}
+            return 0.0001, 0.01, 0.1
         
-        # Calcul des moments
-        mu_hat = returns.mean()
-        sigma_sq_hat = 2 * returns.var()
+        # Calculate mean and variance
+        mu = returns.mean()
+        sigma_sq = 2 * returns.var()  # Factor of 2 from WCE 2009 paper
         
-        # Calcul de l'autocorrélation
-        rho = [returns.autocorr(lag=k) for k in range(1, d+1)]
-        rho = [r if not np.isnan(r) else 0.1 for r in rho]
+        # Estimate lambda from autocorrelation
+        rho1 = returns.autocorr(lag=1)
+        if rho1 is None or np.isnan(rho1):
+            rho1 = 0.1
         
-        # Estimation lambda selon deux méthodes
-        lambda1 = -np.log(max(min(rho[0], 0.999), 1e-6))
+        # Ensure rho1 is in valid range for log
+        rho1 = max(min(rho1, 0.999), 1e-6)
+        lambda_ = -np.log(rho1)
         
-        # Méthode des moindres carrés pour lambda
-        lambda_range = np.linspace(0.01, 1, 100)
-        residuals = np.array([
-            np.sum((rho - np.exp(-l*np.arange(1,d+1)))**2)
-            for l in lambda_range
-        ])
-        lambda2 = lambda_range[np.argmin(residuals)]
-        
-        return {
-            'mu': mu_hat,
-            'sigma_sq': sigma_sq_hat,
-            'lambda_': min(lambda1, lambda2)
-        }
-
-class BSParameterEstimator:
-    """Estimateur des paramètres du modèle Black-Scholes"""
+        return mu, sigma_sq, lambda_
     
     @staticmethod
-    def estimate(returns: pd.Series) -> Dict[str, float]:
-        """
-        Estime mu et sigma à partir des rendements
+    def estimate_bs_parameters(returns: pd.Series) -> tuple:
+        """Estimate parameters for the Black-Scholes model.
         
         Args:
-            returns: Série temporelle des rendements
+            returns: Series of asset returns
             
         Returns:
-            dict: Dictionnaire contenant mu et sigma
+            tuple: (mu, sigma) parameters
         """
         returns = returns.dropna()
         if len(returns) < 2:
-            return {'mu': 0.0001, 'sigma': 0.01}
+            return 0.0001, 0.01
         
-        # Annualisation des paramètres (252 jours de trading)
-        mu = returns.mean() * 252
-        sigma = np.sqrt(returns.var() * 252)
+        # Simple mean and standard deviation estimation
+        mu = returns.mean()
+        sigma = returns.std()
         
-        return {
-            'mu': mu,
-            'sigma': sigma
-        }
+        return mu, sigma

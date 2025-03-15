@@ -1,17 +1,16 @@
-# 📈 IG-OU Asset Price Prediction - Implementation of WCE 2009 Paper
+# IG-OU Asset Price Prediction - Implementation of WCE 2009 Paper
 
 **Implementation of the paper:**  
 *"Financial Modelling with Ornstein-Uhlenbeck Processes Driven by Lévy Process" by Ömer Önalan (WCE 2009)*  
 [![DOI](https://img.shields.io/badge/DOI-10.13140%2FRG.2.2.23230.28487-blue)]()
 
-## 🔍 Overview
+## Overview
 Ce projet implémente le modèle IG-OU (Inverse Gaussian Ornstein-Uhlenbeck) décrit dans l'article WCE 2009 pour la prédiction des prix d'actifs financiers. L'application Streamlit permet de :
 
-- Charger des données depuis Yahoo Finance ou des fichiers locaux
-- Visualiser et analyser les données historiques
-- Simuler les prix futurs avec le modèle IG-OU
+- Sélectionner entre 2 actifs prédéfinis (BTC ou GLE.PA)
+- Choisir un échelonnage temporel (minute/heure/jour/semaine/mois)
+- Visualiser les simulations de prix et volatilité
 - Comparer avec le modèle Black-Scholes classique
-- Analyser la surface de volatilité
 
 ## 📚 Fondements Théoriques (Article WCE 2009)
 ### Composants clés implémentés :
@@ -34,6 +33,14 @@ Ce projet implémente le modèle IG-OU (Inverse Gaussian Ornstein-Uhlenbeck) dé
 ```bash
 project/
 ├── app.py                  # Application principale Streamlit
+├── assets/                 # Données prétraitées par échelonnage
+│   ├── minute/            # Données à la minute
+│   │   ├── BTC.csv       # Bitcoin
+│   │   └── GLE.PA.csv    # Société Générale
+│   ├── hour/             # Données horaires
+│   ├── day/              # Données journalières
+│   ├── week/             # Données hebdomadaires
+│   └── month/            # Données mensuelles
 ├── core/                   # Cœur métier
 │   ├── models/            # Modèles mathématiques
 │   │   ├── ig_ou.py      # Modèle IG-OU (Eq. 3.17)
@@ -83,15 +90,13 @@ streamlit run app.py
 ```
 
 ### Options disponibles
-1. **Source des données :**
-   - Yahoo Finance (temps réel)
-   - Fichiers Excel/CSV
-   - Données d'exemple préchargées
+1. **Sélection des données :**
+   - Choix de l'actif : BTC ou GLE.PA
+   - Choix de l'échelonnage : minute, heure, jour, semaine, mois
 
 2. **Paramètres de simulation :**
    - Nombre de simulations
-   - Horizon de prédiction
-   - Choix du modèle (IG-OU, Black-Scholes, ou les deux)
+   - Paramètres du modèle IG-OU (a, b)
 
 3. **Visualisations :**
    - Données historiques et rendements
@@ -99,7 +104,16 @@ streamlit run app.py
    - Comparaison des modèles
    - Intervalles de confiance
 
-## 🧪 Tests
+## Structure des données
+Les fichiers CSV dans le dossier `assets/` doivent avoir le format suivant :
+```csv
+Date,Close
+2023-01-01 00:00:00,42000.0
+2023-01-01 00:01:00,42012.5
+...
+```
+
+## Tests
 Le projet inclut une suite de tests complète :
 
 ```bash
@@ -111,13 +125,7 @@ python -m pytest tests/test_financial_models.py
 python -m pytest tests/test_performance.py
 ```
 
-## 📊 Validation des Données
-- Vérification automatique de la qualité des données
-- Détection des valeurs aberrantes
-- Gestion des données manquantes
-- Validation de la fréquence d'échantillonnage
-
-## 📌 Notes Importantes
+## Notes Importantes
 1. **Performance :**
    - Optimisation vectorielle avec NumPy
    - Gestion efficace de la mémoire
@@ -125,7 +133,6 @@ python -m pytest tests/test_performance.py
 
 2. **Limitations :**
    - Les paramètres par défaut peuvent nécessiter un ajustement
-   - La qualité des prédictions dépend des données d'entrée
    - Utilisation académique recommandée
 
 ## 📚 Références

@@ -113,3 +113,45 @@ class VolatilityPlotter:
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig)
+
+def plot_predictions(ax, price_paths: np.ndarray, bs_prices: np.ndarray):
+    """Plot price predictions for both models.
+    
+    Args:
+        ax: Matplotlib axis to plot on
+        price_paths: Array of IG-OU price paths
+        bs_prices: Array of Black-Scholes prices
+    """
+    # Plot IG-OU paths
+    for path in price_paths:
+        ax.plot(path, lw=1, alpha=0.1, color='red')
+    
+    # Plot mean IG-OU path
+    ax.plot(np.mean(price_paths, axis=0), 'r--', lw=2, 
+            label='IG-OU (Moyenne)')
+    
+    # Plot Black-Scholes path
+    ax.plot(bs_prices, 'orange', lw=2, label='Black-Scholes')
+    
+    ax.set_title('Comparaison des modèles sur 30 périodes')
+    ax.legend()
+    ax.grid(True)
+
+def plot_volatility(ax, vol_paths: np.ndarray):
+    """Plot volatility paths from IG-OU model.
+    
+    Args:
+        ax: Matplotlib axis to plot on
+        vol_paths: Array of volatility paths
+    """
+    # Plot individual paths
+    for path in vol_paths:
+        ax.plot(path, lw=1, alpha=0.1, color='green')
+    
+    # Plot mean path
+    ax.plot(np.mean(vol_paths, axis=0), 'g-', lw=2, 
+            label='Volatilité moyenne')
+    
+    ax.set_title('Volatilité simulée (IG-OU)')
+    ax.legend()
+    ax.grid(True)

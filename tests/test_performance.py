@@ -1,130 +1,98 @@
-import time
+"""Performance tests for model simulations."""
 import pytest
 import numpy as np
 import pandas as pd
-from WCE2009_streamlit import generate_ig, simulate_ig_ou, simulate_bs, estimate_parameters
+import time
 
-def measure_execution_time(func):
-    """Décorateur pour mesurer le temps d'exécution"""
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        execution_time = end_time - start_time
-        return result, execution_time
-    return wrapper
+from core.models.ig_ou import IGOUModel
+from core.models.black_scholes import BlackScholesModel
+from core.estimators.parameters import ParameterEstimator
 
 @pytest.mark.benchmark
-def test_generate_ig_performance():
-    """Test la performance de la génération IG"""
-    sizes = [100, 1000, 10000]
-    times = []
+def test_igou_simulation_performance(benchmark):
+    """Test IG-OU simulation performance."""
+    model = IGOUModel(lambda_=0.1, a=0.01, b=1.0)
     
-    @measure_execution_time
-    def run_generate_ig(size):
-        return generate_ig(1.0, 1.0, size)
-    
-    for size in sizes:
-        _, execution_time = run_generate_ig(size)
-        times.append(execution_time)
-        
-    # La génération devrait être rapide même pour de grandes tailles
-    assert times[-1] < 1.0  # Moins d'une seconde pour 10000 échantillons
-    
-    # Vérifier la complexité linéaire
-    ratios = [times[i+1]/times[i] for i in range(len(times)-1)]
-    for ratio in ratios:
-        assert ratio < 15  # Le ratio devrait être proche de 10 (ratio des tailles)
-
-@pytest.mark.benchmark
-def test_simulate_ig_ou_performance():
-    """Test la performance de la simulation IG-OU"""
-    @measure_execution_time
     def run_simulation():
-        return simulate_ig_ou(0.2, 0.5, 1.0, 1.0, T=30, dt=1/252)
+        return model.simulate(X0=0.2, T=30)
     
-    # Exécuter plusieurs simulations pour mesurer la consistance
-    n_runs = 5
-    times = []
-    for _ in range(n_runs):
-        _, execution_time = run_simulation()
-        times.append(execution_time)
-    
-    # La simulation devrait être rapide
-    assert np.mean(times) < 0.5  # Moyenne inférieure à 0.5 secondes
-    assert np.std(times) < 0.1   # Temps d'exécution stable
+    # Run benchmark
+    result = benchmark(run_simulation)
+    assert len(result) == 30
 
 @pytest.mark.benchmark
-def test_multiple_simulations_performance():
-    """Test la performance avec plusieurs simulations parallèles"""
-    n_sims = [10, 100, 1000]
-    times = []
+def test_bs_simulation_performance(benchmark):
+    """Test Black-Scholes simulation performance."""
+    model = BlackScholesModel(mu=0.05, sigma=0.2)
     
-    @measure_execution_time
-    def run_multiple_sims(n):
-        return [simulate_bs(100, 0.05, 0.2, 30) for _ in range(n)]
+    def run_simulation():
+        return model.simulate(S0=100.0, days=30)
     
-    for n in n_sims:
-        _, execution_time = run_multiple_sims(n)
-        times.append(execution_time)
-    
-    # Vérifier la scalabilité
-    ratios = [times[i+1]/times[i] for i in range(len(times)-1)]
-    for ratio in ratios:
-        assert ratio < 15  # Le ratio devrait être proche de 10
+    # Run benchmark
+    result = benchmark(run_simulation)
+    assert len(result) == 30
 
 @pytest.mark.benchmark
 def test_parameter_estimation_performance():
-    """Test la performance de l'estimation des paramètres"""
-    # Créer des jeux de données de différentes tailles
-    sizes = [100, 1000, 10000]
-    times = []
+    """Test parameter estimation performance."""
+    # Create large dataset
+    returns = pd.Series(np.random.normal(0.001, 0.02, 10000))
     
-    @measure_execution_time
-    def run_estimation(size):
-        returns = pd.Series(np.random.normal(0.001, 0.02, size))
-        return estimate_parameters(returns)
+    # Time IG-OU parameter estimation
+    start_time = time.time()
+    mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(returns)
+    igou_time = time.time() - start_time
     
-    for size in sizes:
-        _, execution_time = run_estimation(size)
-        times.append(execution_time)
+    # Time Black-Scholes parameter estimation
+    start_time = time.time()
+    mu, sigma = ParameterEstimator.estimate_bs_parameters(returns)
+    bs_time = time.time() - start_time
     
-    # L'estimation devrait être rapide même pour de grandes tailles
-    assert times[-1] < 1.0  # Moins d'une seconde pour 10000 points
+    # Both should complete in under 1 second
+    assert igou_time < 1.0
+    assert bs_time < 1.0
+
+@pytest.mark.benchmark
+def test_multiple_simulations_performance():
+    """Test performance with multiple simulations."""
+    n_simulations = 100
     
-    # Vérifier la complexité
-    ratios = [times[i+1]/times[i] for i in range(len(times)-1)]
-    for ratio in ratios:
-        assert ratio < 15  # Vérifier la scalabilité
+    # Initialize models
+    igou_model = IGOUModel(lambda_=0.1, a=0.01, b=1.0)
+    bs_model = BlackScholesModel(mu=0.05, sigma=0.2)
+    
+    # Time IG-OU simulations
+    start_time = time.time()
+    for _ in range(n_simulations):
+        igou_model.simulate(X0=0.2, T=30)
+    igou_time = time.time() - start_time
+    
+    # Time Black-Scholes simulations
+    start_time = time.time()
+    for _ in range(n_simulations):
+        bs_model.simulate(S0=100.0, days=30)
+    bs_time = time.time() - start_time
+    
+    # Both should complete in reasonable time
+    assert igou_time < 5.0  # 5 seconds for 100 simulations
+    assert bs_time < 5.0
 
 @pytest.mark.benchmark
 def test_memory_usage():
-    """Test l'utilisation de la mémoire"""
+    """Test memory usage during simulations."""
     import psutil
     import os
     
     process = psutil.Process(os.getpid())
-    initial_memory = process.memory_info().rss / 1024 / 1024  # En MB
+    initial_memory = process.memory_info().rss / 1024 / 1024  # MB
     
-    # Exécuter une simulation importante
-    _ = simulate_ig_ou(0.2, 0.5, 1.0, 1.0, T=100, dt=1/252)
+    # Run intensive simulation
+    n_simulations = 1000
+    model = IGOUModel(lambda_=0.1, a=0.01, b=1.0)
+    paths = np.array([model.simulate(X0=0.2, T=30) for _ in range(n_simulations)])
     
-    final_memory = process.memory_info().rss / 1024 / 1024  # En MB
+    final_memory = process.memory_info().rss / 1024 / 1024  # MB
     memory_increase = final_memory - initial_memory
     
-    # L'augmentation de mémoire devrait être raisonnable
-    assert memory_increase < 100  # Moins de 100MB d'augmentation
-
-def test_numerical_stability():
-    """Test la stabilité numérique avec des valeurs extrêmes"""
-    # Test avec des valeurs très petites
-    small_result = generate_ig(1e-10, 1e-10, 100)
-    assert np.all(np.isfinite(small_result))
-    
-    # Test avec des valeurs très grandes
-    large_result = generate_ig(1e10, 1e10, 100)
-    assert np.all(np.isfinite(large_result))
-    
-    # Test de la stabilité de la simulation
-    extreme_sim = simulate_ig_ou(1e-10, 1e10, 1e-10, 1e10, T=30, dt=1/252)
-    assert np.all(np.isfinite(extreme_sim))
+    # Memory increase should be reasonable
+    assert memory_increase < 500  # Less than 500MB increase

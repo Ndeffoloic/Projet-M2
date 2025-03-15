@@ -106,3 +106,37 @@ def check_data_quality(data: pd.Series) -> Tuple[bool, list]:
         issues.append("Fréquence d'échantillonnage irrégulière")
     
     return len(issues) == 0, issues
+
+def show_statistics(price_paths: np.ndarray, vol_paths: np.ndarray, 
+                   bs_prices: np.ndarray):
+    """Display simulation statistics.
+    
+    Args:
+        price_paths: Array of IG-OU price paths
+        vol_paths: Array of volatility paths
+        bs_prices: Array of Black-Scholes prices
+    """
+    st.subheader("Statistiques de simulation")
+    
+    # Calculate statistics
+    stats = {
+        'Modèle': ['IG-OU', 'Black-Scholes'],
+        'Prix moyen final': [
+            np.mean(price_paths[:, -1]),
+            bs_prices[-1]
+        ],
+        'Volatilité moyenne': [
+            np.mean(vol_paths),
+            np.nan
+        ]
+    }
+    
+    # Display statistics table
+    st.dataframe(pd.DataFrame(stats))
+    
+    # Display confidence intervals
+    st.write(
+        f"**Intervalle de confiance IG-OU (95%) :** "
+        f"{np.percentile(price_paths[:, -1], 2.5):.2f} - "
+        f"{np.percentile(price_paths[:, -1], 97.5):.2f}"
+    )

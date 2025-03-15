@@ -1,3 +1,55 @@
+"""Test suite for data handling functionality."""
+import pytest
+import pandas as pd
+from pathlib import Path
+
+from core.data.loader import load_asset_data, VALID_ASSETS, VALID_TIMEFRAMES
+
+def test_valid_asset_loading():
+    """Test loading valid assets with valid timeframes."""
+    for asset in VALID_ASSETS:
+        for timeframe in VALID_TIMEFRAMES:
+            data = load_asset_data(asset, timeframe)
+            if data is not None:  # If file exists
+                assert isinstance(data, pd.Series)
+                assert data.index.name == "Date"
+                assert len(data) > 0
+                assert data.dtype.kind in 'iuf'  # Integer or float type
+
+def test_invalid_asset():
+    """Test loading invalid asset."""
+    data = load_asset_data("INVALID", "minute")
+    assert data is None
+
+def test_invalid_timeframe():
+    """Test loading invalid timeframe."""
+    data = load_asset_data("BTC", "INVALID")
+    assert data is None
+
+def test_missing_file():
+    """Test handling of missing files."""
+    # Create a temporary path that definitely doesn't exist
+    temp_path = Path("assets/nonexistent")
+    if not temp_path.exists():
+        data = load_asset_data("BTC", "nonexistent")
+        assert data is None
+
+def test_data_structure():
+    """Test structure of loaded data."""
+    data = load_asset_data("BTC", "minute")
+    if data is not None:
+        # Check index is datetime
+        assert isinstance(data.index, pd.DatetimeIndex)
+        
+        # Check data is sorted
+        assert data.index.is_monotonic_increasing
+        
+        # Check no missing values
+        assert not data.isna().any()
+        
+        # Check all values are positive (prices)
+        assert (data > 0).all()
+
 import pandas as pd
 import pytest
 import numpy as np
