@@ -1,9 +1,10 @@
 """Data loading module for predefined assets and timeframes."""
-import pandas as pd
-import streamlit as st
 from pathlib import Path
 
-VALID_ASSETS = ["BTC", "GLE.PA"]
+import pandas as pd
+import streamlit as st
+
+VALID_ASSETS = ["BTC-USD", "GLE.PA"]
 VALID_TIMEFRAMES = ["minute", "hour", "day", "week", "month"]
 
 def load_asset_data(asset: str, timeframe: str) -> pd.DataFrame:
@@ -24,7 +25,7 @@ def load_asset_data(asset: str, timeframe: str) -> pd.DataFrame:
         st.error(f"Invalid timeframe. Please choose from: {VALID_TIMEFRAMES}")
         return None
 
-    file_path = Path("assets") / timeframe / f"{asset}.csv"
+    file_path = Path("assets") / timeframe / f"{asset}_{timeframe}.csv"
     
     try:
         data = pd.read_csv(file_path, parse_dates=['Date'], index_col='Date')
