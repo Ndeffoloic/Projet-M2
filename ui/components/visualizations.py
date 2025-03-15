@@ -114,44 +114,63 @@ class VolatilityPlotter:
         st.pyplot(fig)
         plt.close(fig)
 
-def plot_predictions(ax, price_paths: np.ndarray, bs_prices: np.ndarray):
+def plot_predictions(ax, price_paths: List[List[float]], bs_prices: List[float]):
     """Plot price predictions for both models.
     
     Args:
         ax: Matplotlib axis to plot on
-        price_paths: Array of IG-OU price paths
-        bs_prices: Array of Black-Scholes prices
+        price_paths: List of IG-OU price paths
+        bs_prices: List of Black-Scholes prices
     """
-    # Plot IG-OU paths
-    for path in price_paths:
-        ax.plot(path, lw=1, alpha=0.1, color='red')
+    # Convert lists to numpy arrays for calculations
+    price_paths = np.array(price_paths)
+    bs_prices = np.array(bs_prices)
     
-    # Plot mean IG-OU path
-    ax.plot(np.mean(price_paths, axis=0), 'r--', lw=2, 
-            label='IG-OU (Moyenne)')
+    # Calculate statistics for IG-OU paths
+    mean_path = np.mean(price_paths, axis=0)
+    std_path = np.std(price_paths, axis=0)
+    upper_bound = mean_path + 2 * std_path
+    lower_bound = mean_path - 2 * std_path
     
-    # Plot Black-Scholes path
-    ax.plot(bs_prices, 'orange', lw=2, label='Black-Scholes')
+    # Plot IG-OU predictions
+    time_points = np.arange(len(mean_path))
+    ax.plot(time_points, mean_path, 'b-', label='IG-OU Mean Path')
+    ax.fill_between(time_points, lower_bound, upper_bound, color='b', alpha=0.2, label='IG-OU 95% CI')
     
-    ax.set_title('Comparaison des modèles sur 30 périodes')
-    ax.legend()
+    # Plot Black-Scholes prediction
+    ax.plot(time_points, bs_prices, 'r--', label='Black-Scholes Path')
+    
+    # Customize plot
+    ax.set_title('Price Predictions')
+    ax.set_xlabel('Days')
+    ax.set_ylabel('Price')
     ax.grid(True)
+    ax.legend()
 
-def plot_volatility(ax, vol_paths: np.ndarray):
+def plot_volatility(ax, vol_paths: List[List[float]]):
     """Plot volatility paths from IG-OU model.
     
     Args:
         ax: Matplotlib axis to plot on
-        vol_paths: Array of volatility paths
+        vol_paths: List of volatility paths
     """
-    # Plot individual paths
-    for path in vol_paths:
-        ax.plot(path, lw=1, alpha=0.1, color='green')
+    # Convert to numpy array
+    vol_paths = np.array(vol_paths)
     
-    # Plot mean path
-    ax.plot(np.mean(vol_paths, axis=0), 'g-', lw=2, 
-            label='Volatilité moyenne')
+    # Calculate statistics
+    mean_vol = np.mean(vol_paths, axis=0)
+    std_vol = np.std(vol_paths, axis=0)
+    upper_bound = mean_vol + 2 * std_vol
+    lower_bound = mean_vol - 2 * std_vol
     
-    ax.set_title('Volatilité simulée (IG-OU)')
-    ax.legend()
+    # Plot
+    time_points = np.arange(len(mean_vol))
+    ax.plot(time_points, mean_vol, 'g-', label='Mean Volatility')
+    ax.fill_between(time_points, lower_bound, upper_bound, color='g', alpha=0.2, label='95% CI')
+    
+    # Customize plot
+    ax.set_title('Volatility Paths')
+    ax.set_xlabel('Days')
+    ax.set_ylabel('Volatility')
     ax.grid(True)
+    ax.legend()

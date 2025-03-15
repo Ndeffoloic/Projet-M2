@@ -1,41 +1,46 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Union
 
 def display_error(message: str) -> None:
     """Affiche un message d'erreur"""
-    st.error(f"🚨 {message}")
+    st.error(f" {message}")
 
 def display_success(message: str) -> None:
     """Affiche un message de succès"""
-    st.success(f"✅ {message}")
+    st.success(f" {message}")
 
 def display_info(message: str) -> None:
     """Affiche un message d'information"""
-    st.info(f"ℹ️ {message}")
+    st.info(f" {message}")
 
-def display_parameters(params: dict) -> None:
-    """
-    Affiche les paramètres estimés
+def display_parameters(mu: float, sigma_sq: float, lambda_: float):
+    """Display estimated model parameters.
     
     Args:
-        params: Dictionnaire des paramètres
+        mu: Drift parameter
+        sigma_sq: Volatility variance
+        lambda_: Mean reversion speed
     """
-    st.subheader("Paramètres estimés")
+    st.subheader("Model Parameters")
     
-    col1, col2 = st.columns(2)
+    params = {
+        'μ (Drift)': mu,
+        'σ² (Volatility Variance)': sigma_sq,
+        'λ (Mean Reversion Speed)': lambda_
+    }
     
-    with col1:
-        for key, value in params.items():
-            st.write(f"{key}: {value:.6f}")
+    st.dataframe(pd.DataFrame({
+        'Parameter': list(params.keys()),
+        'Value': [f"{v:.6f}" for v in params.values()]
+    }).set_index('Parameter'))
     
-    with col2:
+    with st.expander("Parameter Interpretation"):
         st.markdown("""
-        **Interprétation:**
-        - μ: Drift (tendance)
-        - σ²: Variance de la volatilité
-        - λ: Vitesse de retour à la moyenne
+        - **μ (Drift)**: Average trend in the asset price
+        - **σ² (Volatility Variance)**: Measure of volatility fluctuation
+        - **λ (Mean Reversion Speed)**: Rate at which volatility returns to its mean
         """)
 
 def format_data_summary(data: pd.Series) -> None:
@@ -74,69 +79,91 @@ def format_data_summary(data: pd.Series) -> None:
     
     st.dataframe(summary, hide_index=True)
 
-def check_data_quality(data: pd.Series) -> Tuple[bool, list]:
-    """
-    Vérifie la qualité des données
+def check_data_quality(data: pd.Series) -> tuple[bool, list[str]]:
+    """Check data quality.
     
     Args:
-        data: Série temporelle à vérifier
+        data: Time series data to check
         
     Returns:
-        Tuple[bool, list]: (données valides?, liste des problèmes)
+        tuple: (is_valid, list of issues)
     """
     issues = []
     
-    # Vérifier les valeurs manquantes
-    if data.isna().any():
-        issues.append(f"Données manquantes: {data.isna().sum()} valeurs")
+    # Check for missing values
+    if data.isnull().any():
+        issues.append("Data contains missing values")
     
-    # Vérifier les valeurs négatives
+    # Check for negative prices
     if (data < 0).any():
-        issues.append("Présence de prix négatifs")
+        issues.append("Data contains negative prices")
     
-    # Vérifier les valeurs extrêmes
-    z_scores = np.abs((data - data.mean()) / data.std())
-    if (z_scores > 5).any():
-        n_outliers = (z_scores > 5).sum()
-        issues.append(f"Valeurs extrêmes détectées: {n_outliers} observations")
+    # Check for sufficient data points
+    if len(data) < 30:
+        issues.append("Insufficient data points (minimum 30 required)")
     
-    # Vérifier la fréquence des données
-    time_diffs = data.index.to_series().diff()
-    if time_diffs.nunique() > 1:
-        issues.append("Fréquence d'échantillonnage irrégulière")
+    # Check for extreme values
+    mean = data.mean()
+    std = data.std()
+    if ((data - mean).abs() > 5 * std).any():
+        issues.append("Data contains extreme outliers")
     
     return len(issues) == 0, issues
 
-def show_statistics(price_paths: np.ndarray, vol_paths: np.ndarray, 
-                   bs_prices: np.ndarray):
+def show_statistics(price_paths: List[List[float]], vol_paths: List[List[float]], bs_prices: List[float]):
     """Display simulation statistics.
     
     Args:
-        price_paths: Array of IG-OU price paths
-        vol_paths: Array of volatility paths
-        bs_prices: Array of Black-Scholes prices
+        price_paths: List of IG-OU price paths
+        vol_paths: List of volatility paths
+        bs_prices: List of Black-Scholes prices
     """
-    st.subheader("Statistiques de simulation")
+    # Convert to numpy arrays
+    price_paths = np.array(price_paths)
+    vol_paths = np.array(vol_paths)
+    bs_prices = np.array(bs_prices)
     
-    # Calculate statistics
-    stats = {
-        'Modèle': ['IG-OU', 'Black-Scholes'],
-        'Prix moyen final': [
-            np.mean(price_paths[:, -1]),
-            bs_prices[-1]
-        ],
-        'Volatilité moyenne': [
-            np.mean(vol_paths),
-            np.nan
-        ]
+    # Calculate final price statistics
+    final_igou_prices = price_paths[:, -1]
+    final_bs_price = bs_prices[-1]
+    
+    igou_stats = {
+        'Mean': np.mean(final_igou_prices),
+        'Std Dev': np.std(final_igou_prices),
+        'Min': np.min(final_igou_prices),
+        'Max': np.max(final_igou_prices),
+        '5th Percentile': np.percentile(final_igou_prices, 5),
+        '95th Percentile': np.percentile(final_igou_prices, 95)
     }
     
-    # Display statistics table
-    st.dataframe(pd.DataFrame(stats))
+    # Calculate volatility statistics
+    final_vols = vol_paths[:, -1]
+    vol_stats = {
+        'Mean': np.mean(final_vols),
+        'Std Dev': np.std(final_vols),
+        'Min': np.min(final_vols),
+        'Max': np.max(final_vols),
+        '5th Percentile': np.percentile(final_vols, 5),
+        '95th Percentile': np.percentile(final_vols, 95)
+    }
     
-    # Display confidence intervals
-    st.write(
-        f"**Intervalle de confiance IG-OU (95%) :** "
-        f"{np.percentile(price_paths[:, -1], 2.5):.2f} - "
-        f"{np.percentile(price_paths[:, -1], 97.5):.2f}"
-    )
+    # Display statistics
+    st.subheader("Simulation Statistics")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("IG-OU Final Price Statistics")
+        st.dataframe(pd.DataFrame({
+            'Metric': list(igou_stats.keys()),
+            'Value': [f"{v:.2f}" for v in igou_stats.values()]
+        }).set_index('Metric'))
+        
+        st.write(f"Black-Scholes Final Price: {final_bs_price:.2f}")
+    
+    with col2:
+        st.write("IG-OU Volatility Statistics")
+        st.dataframe(pd.DataFrame({
+            'Metric': list(vol_stats.keys()),
+            'Value': [f"{v:.4f}" for v in vol_stats.values()]
+        }).set_index('Metric'))

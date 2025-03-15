@@ -2,6 +2,7 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from core.data.loader import load_asset_data
 from core.models.ig_ou import IGOUModel
@@ -33,10 +34,12 @@ def main():
     st.subheader(f"Données historiques - {config['asset']} ({config['timeframe']})")
     st.line_chart(price_series)
     
-    # Calculate returns and estimate parameters
-    returns = price_series.pct_change().dropna()
-    mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(returns)
-    bs_mu, bs_sigma = ParameterEstimator.estimate_bs_parameters(returns)
+    # Convert price series to DataFrame with 'Close' column
+    price_df = pd.DataFrame({'Close': price_series})
+    
+    # Estimate parameters
+    mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(price_df)
+    bs_mu, bs_sigma = ParameterEstimator.estimate_bs_parameters(price_df)
     
     # Initialize models
     igou_model = IGOUModel(lambda_, config["a"], config["b"])
@@ -44,13 +47,12 @@ def main():
     
     # Run simulations
     if st.button("Lancer la simulation"):
-        run_simulations(
-            price_series.iloc[-1],
-            igou_model,
-            bs_model,
-            config["n_simulations"],
-            returns.std()
-        )
+        if len(price_series) > 0:
+            last_price = price_series.iloc[-1]
+            init_vol = np.sqrt(sigma_sq)
+            run_simulations(last_price, igou_model, bs_model, config["n_simulations"], init_vol)
+        else:
+            st.error("Données insuffisantes pour la simulation")
 
 def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackScholesModel, 
                    n_simulations: int, init_vol: float):
@@ -63,30 +65,34 @@ def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackSch
         n_simulations: Number of simulations to run
         init_vol: Initial volatility
     """
-    # Simulation IG-OU
-    vol_paths = np.zeros((n_simulations, 30))
-    price_paths = np.zeros((n_simulations, 30))
-    
-    for i in range(n_simulations):
-        vol = igou_model.simulate(init_vol)
-        prices = [last_price]
-        for t in range(29):
-            shock = vol[t] * np.random.normal()
-            prices.append(prices[-1] * np.exp(igou_model.mu + shock))
-        price_paths[i] = prices
-        vol_paths[i] = vol
-    
-    # Simulation Black-Scholes
-    bs_prices = bs_model.simulate(last_price)
-    
-    # Create visualization
+    # Create figure with two subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
-    plot_predictions(ax1, price_paths, bs_prices)
+    
+    # Run IG-OU simulations
+    price_paths = []
+    vol_paths = []
+    for _ in range(n_simulations):
+        vol_path = igou_model.simulate(X0=init_vol, T=30)
+        vol_paths.append(vol_path)
+        
+        # Simulate price path using the volatility path
+        price_path = [last_price]
+        for vol in vol_path[1:]:  # Skip first vol since we use it for the first step
+            price_path.append(price_path[-1] * (1 + np.random.normal(0, vol)))
+        price_paths.append(price_path)
+    
+    # Run Black-Scholes simulation
+    bs_path = bs_model.simulate(S0=last_price, days=30)
+    
+    # Plot predictions and volatility
+    plot_predictions(ax1, price_paths, bs_path)
     plot_volatility(ax2, vol_paths)
+    
+    # Display plots
     st.pyplot(fig)
     
     # Show statistics
-    show_statistics(price_paths, vol_paths, bs_prices)
+    show_statistics(price_paths, vol_paths, bs_path)
 
 if __name__ == "__main__":
     main()
