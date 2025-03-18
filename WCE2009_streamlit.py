@@ -1,6 +1,7 @@
 import time
 from datetime import datetime, timedelta
 from io import StringIO
+from math import sqrt
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,6 +9,9 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 from scipy.stats import norm
+from sklearn.metrics import (mean_absolute_error,
+                             mean_absolute_percentage_error,
+                             mean_squared_error)
 
 
 def generate_ig(a, b, size):
@@ -93,6 +97,231 @@ def estimate_parameters(returns):
     lambda_ = -np.log(max(rho1, 1e-6))
     
     return mu, sigma_sq, lambda_
+
+# Modified function to perform backtesting of prediction models
+def perform_backtesting(data, n_test=30, n_simulations=100):
+    """
+    Performs backtesting of prediction models by using historical data to predict the last n_test data points.
+    
+    Parameters:
+    data (pandas.DataFrame): DataFrame with 'Close' price column
+    n_test (int): Number of data points to use for testing (default: 30)
+    n_simulations (int): Number of Monte Carlo simulations to run (default: 100)
+    
+    Returns:
+    dict: Dictionary with predictions and metrics for both models
+    """
+    # Ensure data is sorted by date
+    if isinstance(data.index, pd.DatetimeIndex):
+        data = data.sort_index()
+    
+    # Split data into training and testing sets
+    train_data = data[:-n_test].copy()
+    test_data = data[-n_test:].copy()
+    
+    # Calculate returns for the training set
+    returns = train_data['Close'].pct_change(fill_method=None).dropna()
+    
+    # Estimate parameters from training data
+    mu, sigma_sq, lambda_ = estimate_parameters(returns)
+    
+    # Get the last price from training data for initialization
+    last_price = train_data['Close'].iloc[-1]
+    init_vol = max(min(returns.std(), 0.05), 0.001)
+    
+    # Initialize arrays for predictions
+    igou_paths = np.zeros((n_simulations, n_test))
+    
+    # Run IG-OU model simulations
+    for i in range(n_simulations):
+        try:
+            # Simulate volatility
+            vol = simulate_ig_ou(X0=init_vol, lambda_=max(lambda_, 0.001), a=2.2395e-7, b=1.0, T=n_test)
+            
+            # Simulate prices with the simulated volatility
+            prices = [last_price]
+            for t in range(n_test-1):
+                drift = mu
+                shock = vol[t] * np.random.normal()
+                prices.append(prices[-1] * np.exp(drift + shock))
+            
+            igou_paths[i] = prices
+        except Exception as e:
+            st.error(f"Error in IG-OU simulation {i+1}: {str(e)}")
+            # Fill with the last successful simulation or with zeros
+            igou_paths[i] = igou_paths[max(0, i-1)] if i > 0 else np.zeros(n_test)
+    
+    # Calculate mean prediction for IG-OU model
+    igou_mean_prediction = np.mean(igou_paths, axis=0)
+    
+    # Run Black-Scholes simulation
+    bs_prediction = simulate_bs(last_price, mu, returns.std(), days=n_test)
+    
+    # Get actual test values
+    actual_prices = test_data['Close'].values
+    
+    # Calculate metrics
+    igou_rmse = sqrt(mean_squared_error(actual_prices, igou_mean_prediction))
+    bs_rmse = sqrt(mean_squared_error(actual_prices, bs_prediction))
+    
+    igou_mae = mean_absolute_error(actual_prices, igou_mean_prediction)
+    bs_mae = mean_absolute_error(actual_prices, bs_prediction)
+    
+    # Mean Absolute Percentage Error (MAPE)
+    igou_mape = mean_absolute_percentage_error(actual_prices, igou_mean_prediction) * 100
+    bs_mape = mean_absolute_percentage_error(actual_prices, bs_prediction) * 100
+    
+    # Direction accuracy (percentage of correct directional predictions)
+    def direction_accuracy(actual, predicted):
+        actual_dir = np.diff(actual) > 0
+        pred_dir = np.diff(predicted) > 0
+        return np.mean(actual_dir == pred_dir) * 100
+    
+    igou_dir_acc = direction_accuracy(actual_prices, igou_mean_prediction)
+    bs_dir_acc = direction_accuracy(actual_prices, bs_prediction)
+    
+    # Prepare results
+    results = {
+        'actual_prices': actual_prices,
+        'igou_prediction': igou_mean_prediction,
+        'bs_prediction': bs_prediction,
+        'metrics': {
+            'igou_rmse': igou_rmse,
+            'bs_rmse': bs_rmse,
+            'igou_mae': igou_mae,
+            'bs_mae': bs_mae,
+            'igou_mape': igou_mape,
+            'bs_mape': bs_mape,
+            'igou_dir_acc': igou_dir_acc,
+            'bs_dir_acc': bs_dir_acc
+        }
+    }
+    
+    return results
+
+# Function to visualize backtesting results
+def plot_backtesting_results(results, n_test=30):
+    """
+    Plot the backtesting results.
+    
+    Parameters:
+    results (dict): Dictionary with predictions and metrics
+    n_test (int): Number of test data points
+    """
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Plot actual prices
+    ax.plot(range(n_test), results['actual_prices'], 'k-', lw=2, label='Actual Prices')
+    
+    # Plot IG-OU prediction
+    ax.plot(range(n_test), results['igou_prediction'], 'r--', lw=2, label='IG-OU Prediction')
+    
+    # Plot Black-Scholes prediction
+    ax.plot(range(n_test), results['bs_prediction'], 'b-.', lw=2, label='Black-Scholes Prediction')
+    
+    ax.set_title('Backtesting Results: Prediction vs Actual Prices')
+    ax.set_xlabel('Days')
+    ax.set_ylabel('Price')
+    ax.legend()
+    ax.grid(True)
+    
+    return fig
+
+# Add this to the main function
+def add_backtesting_section(data):
+    """
+    Add the backtesting section to the Streamlit app.
+    
+    Parameters:
+    data (pandas.DataFrame): DataFrame with 'Close' price column
+    """
+    st.header("Model Backtesting")
+    
+    # Slider for number of test days
+    n_test = st.slider("Number of days to test", 10, 60, 30)
+    
+    # Number of simulations for Monte Carlo
+    n_simulations = st.number_input("Number of simulations", 10, 1000, 100)
+    
+    # Check if we have enough data
+    if len(data) <= n_test:
+        st.error(f"Not enough data for backtesting. Need more than {n_test} data points.")
+        return
+    
+    # Run backtesting
+    with st.spinner("Running backtesting..."):
+        results = perform_backtesting(data, n_test, n_simulations)
+    
+    # Plot results
+    fig = plot_backtesting_results(results, n_test)
+    st.pyplot(fig)
+    
+    # Display metrics
+    st.subheader("Performance Metrics")
+    
+    # Create a DataFrame for metrics
+    metrics_df = pd.DataFrame({
+        'Metric': ['RMSE (Root Mean Squared Error)', 
+                   'MAE (Mean Absolute Error)', 
+                   'MAPE (Mean Absolute Percentage Error)',
+                   'Direction Accuracy (%)'],
+        'IG-OU Model': [results['metrics']['igou_rmse'], 
+                       results['metrics']['igou_mae'], 
+                       results['metrics']['igou_mape'],
+                       results['metrics']['igou_dir_acc']],
+        'Black-Scholes Model': [results['metrics']['bs_rmse'], 
+                               results['metrics']['bs_mae'], 
+                               results['metrics']['bs_mape'],
+                               results['metrics']['bs_dir_acc']]
+    })
+    
+    # Format columns with float values
+    for col in ['IG-OU Model', 'Black-Scholes Model']:
+        metrics_df[col] = metrics_df[col].apply(lambda x: f"{x:.4f}")
+    
+    st.table(metrics_df)
+    
+    # Determine the best model based on RMSE
+    best_rmse = min(results['metrics']['igou_rmse'], results['metrics']['bs_rmse'])
+    best_model = "IG-OU" if results['metrics']['igou_rmse'] == best_rmse else "Black-Scholes"
+    
+    st.success(f"Based on RMSE, the {best_model} model performed better for this time period.")
+    
+    # Add interpretation
+    with st.expander("Interpretation of Metrics"):
+        st.markdown("""
+        ### Metrics Explanation:
+        
+        - **RMSE (Root Mean Squared Error)**: Measures the square root of the average squared differences between predicted and actual values. 
+          Lower values indicate better performance. RMSE penalizes large errors more than small ones.
+        
+        - **MAE (Mean Absolute Error)**: Measures the average absolute differences between predicted and actual values. 
+          Easier to interpret as it's in the same units as the data. Lower values indicate better performance.
+        
+        - **MAPE (Mean Absolute Percentage Error)**: Expresses error as a percentage of the actual values, making it scale-independent.
+          Lower values indicate better performance. A MAPE of 5% means predictions are on average 5% away from actual values.
+        
+        - **Direction Accuracy**: Percentage of times the model correctly predicted the direction of price movement (up or down).
+          Higher values indicate better performance. A value of 50% is no better than random guessing.
+        
+        ### What to Look For:
+        
+        - The model with lower RMSE, MAE, and MAPE values generally performs better at capturing the price levels.
+        - Direction accuracy is especially important if you're more concerned with predicting price movements than exact values.
+        - Consider the tradeoffs between metrics based on your investment strategy.
+        """)
+    
+    # Show raw data
+    with st.expander("Show Raw Prediction Data"):
+        prediction_df = pd.DataFrame({
+            'Day': range(1, n_test + 1),
+            'Actual Price': results['actual_prices'],
+            'IG-OU Prediction': results['igou_prediction'],
+            'Black-Scholes Prediction': results['bs_prediction'],
+            'IG-OU Error (%)': ((results['igou_prediction'] - results['actual_prices']) / results['actual_prices'] * 100),
+            'BS Error (%)': ((results['bs_prediction'] - results['actual_prices']) / results['actual_prices'] * 100)
+        })
+        st.dataframe(prediction_df)
 
 def main():
     st.title("Prédiction de Prix et Volatilité")
@@ -222,6 +451,9 @@ def main():
             'Max': [returns.max()]
         })
         st.write(stats_df)
+        
+        # Add backtesting section
+        add_backtesting_section(data)
         
         # Estimation des paramètres
         mu, sigma_sq, lambda_ = estimate_parameters(returns)

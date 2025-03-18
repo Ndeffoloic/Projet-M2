@@ -1,5 +1,5 @@
 /.venv
 /pyVenv
-.pyc
+/pyVenv311
 .cpython
 *.*.pyc
