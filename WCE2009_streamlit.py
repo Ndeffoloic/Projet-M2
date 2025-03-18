@@ -274,6 +274,10 @@ def add_backtesting_section(data):
     with st.spinner("Running backtesting..."):
         results = perform_backtesting(data, n_test, n_simulations)
     
+    # Check if results is not None
+    if results is None:
+        return
+    
     # Plot results
     fig = plot_backtesting_results(results, n_test)
     st.pyplot(fig)
