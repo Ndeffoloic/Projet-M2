@@ -115,6 +115,14 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
     if isinstance(data.index, pd.DatetimeIndex):
         data = data.sort_index()
     
+    # Remove NaN values from the data before splitting
+    data = data.dropna(subset=['Close'])
+    
+    # Check if we have enough data after dropping NaNs
+    if len(data) <= n_test:
+        st.error(f"Not enough valid data for backtesting. Need more than {n_test} non-NaN data points.")
+        return None
+    
     # Split data into training and testing sets
     train_data = data[:-n_test].copy()
     test_data = data[-n_test:].copy()
@@ -160,44 +168,58 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
     # Get actual test values
     actual_prices = test_data['Close'].values
     
-    # Calculate metrics
-    igou_rmse = sqrt(mean_squared_error(actual_prices, igou_mean_prediction))
-    bs_rmse = sqrt(mean_squared_error(actual_prices, bs_prediction))
+    # Ensure there are no NaN values in any of the arrays
+    valid_indices = ~np.isnan(actual_prices) & ~np.isnan(igou_mean_prediction) & ~np.isnan(bs_prediction)
     
-    igou_mae = mean_absolute_error(actual_prices, igou_mean_prediction)
-    bs_mae = mean_absolute_error(actual_prices, bs_prediction)
-    
-    # Mean Absolute Percentage Error (MAPE)
-    igou_mape = mean_absolute_percentage_error(actual_prices, igou_mean_prediction) * 100
-    bs_mape = mean_absolute_percentage_error(actual_prices, bs_prediction) * 100
-    
-    # Direction accuracy (percentage of correct directional predictions)
-    def direction_accuracy(actual, predicted):
-        actual_dir = np.diff(actual) > 0
-        pred_dir = np.diff(predicted) > 0
-        return np.mean(actual_dir == pred_dir) * 100
-    
-    igou_dir_acc = direction_accuracy(actual_prices, igou_mean_prediction)
-    bs_dir_acc = direction_accuracy(actual_prices, bs_prediction)
-    
-    # Prepare results
-    results = {
-        'actual_prices': actual_prices,
-        'igou_prediction': igou_mean_prediction,
-        'bs_prediction': bs_prediction,
-        'metrics': {
-            'igou_rmse': igou_rmse,
-            'bs_rmse': bs_rmse,
-            'igou_mae': igou_mae,
-            'bs_mae': bs_mae,
-            'igou_mape': igou_mape,
-            'bs_mape': bs_mape,
-            'igou_dir_acc': igou_dir_acc,
-            'bs_dir_acc': bs_dir_acc
+    if np.any(valid_indices):
+        # Filter out NaN values
+        filtered_actual = actual_prices[valid_indices]
+        filtered_igou = igou_mean_prediction[valid_indices]
+        filtered_bs = bs_prediction[valid_indices]
+        
+        # Calculate metrics
+        igou_rmse = sqrt(mean_squared_error(filtered_actual, filtered_igou))
+        bs_rmse = sqrt(mean_squared_error(filtered_actual, filtered_bs))
+        
+        igou_mae = mean_absolute_error(filtered_actual, filtered_igou)
+        bs_mae = mean_absolute_error(filtered_actual, filtered_bs)
+        
+        # Mean Absolute Percentage Error (MAPE)
+        igou_mape = mean_absolute_percentage_error(filtered_actual, filtered_igou) * 100
+        bs_mape = mean_absolute_percentage_error(filtered_actual, filtered_bs) * 100
+        
+        # Direction accuracy (percentage of correct directional predictions)
+        def direction_accuracy(actual, predicted):
+            if len(actual) <= 1:
+                return 50.0  # Default value if there's not enough data
+            actual_dir = np.diff(actual) > 0
+            pred_dir = np.diff(predicted) > 0
+            return np.mean(actual_dir == pred_dir) * 100
+        
+        igou_dir_acc = direction_accuracy(filtered_actual, filtered_igou)
+        bs_dir_acc = direction_accuracy(filtered_actual, filtered_bs)
+        
+        # Prepare results
+        results = {
+            'actual_prices': actual_prices,
+            'igou_prediction': igou_mean_prediction,
+            'bs_prediction': bs_prediction,
+            'metrics': {
+                'igou_rmse': igou_rmse,
+                'bs_rmse': bs_rmse,
+                'igou_mae': igou_mae,
+                'bs_mae': bs_mae,
+                'igou_mape': igou_mape,
+                'bs_mape': bs_mape,
+                'igou_dir_acc': igou_dir_acc,
+                'bs_dir_acc': bs_dir_acc
+            }
         }
-    }
-    
-    return results
+        
+        return results
+    else:
+        st.error("Not enough valid data points for evaluation after filtering NaN values.")
+        return None
 
 # Function to visualize backtesting results
 def plot_backtesting_results(results, n_test=30):
