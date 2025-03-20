@@ -1,16 +1,17 @@
 """Main application module for the IG-OU asset price prediction."""
-import streamlit as st
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import streamlit as st
 
 from core.data.loader import load_asset_data
-from core.models.ig_ou import IGOUModel
-from core.models.black_scholes import BlackScholesModel
 from core.estimators.parameters import ParameterEstimator
+from core.models.black_scholes import BlackScholesModel
+from core.models.ig_ou import IGOUModel
 from ui.components.sidebar import render_sidebar
 from ui.components.visualizations import plot_predictions, plot_volatility
 from ui.helpers import show_statistics
+
 
 def main():
     """Main application entry point."""
@@ -35,7 +36,10 @@ def main():
     st.line_chart(price_series)
     
     # Convert price series to DataFrame with 'Close' column
-    price_df = pd.DataFrame({'Close': price_series})
+    if config["timeframe"] in ["day", "hour"] or config['asset'] == "GLE.PA" : 
+        price_df = pd.DataFrame({'Close': price_series})
+    else:
+        price_df = pd.DataFrame({'Price': price_series})
     
     # Estimate parameters
     mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(price_df)
