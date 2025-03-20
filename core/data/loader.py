@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-VALID_ASSETS = ["BTC-USD", "GLE.PA"]
+VALID_ASSETS = ["BTC-USD", "GLE.PA", "NVIDIA"]
 VALID_TIMEFRAMES = ["minute", "hour", "day", "week", "month"]
 
 def load_asset_data(asset: str, timeframe: str) -> pd.DataFrame:

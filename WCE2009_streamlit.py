@@ -119,7 +119,7 @@ def main():
                         for attempt in range(3):
                             try:
                                 data = yf.download(ticker, period=period, progress=False)
-                                if not data.empty and 'Close' in data.columns:
+                                if not data.empty and 'Price' in data.columns:
                                     break
                             except Exception as e:
                                 st.warning(f"Tentative {attempt+1}: {str(e)}")
@@ -127,14 +127,14 @@ def main():
                                     time.sleep(1)  # Attendre avant de réessayer
                                 continue
                         
-                        if data is None or data.empty or 'Close' not in data.columns:
+                        if data is None or data.empty or 'Price' not in data.columns:
                             st.error(f"Impossible de récupérer les données pour {ticker}")
                         else:
                             st.success(f"Données téléchargées pour {ticker}")
-                            # Vérifier que Close contient des données numériques
-                            if data['Close'].dtype.kind in 'iuf':  # i: int, u: uint, f: float
-                                returns = data['Close'].pct_change(fill_method=None).dropna()
-                                st.line_chart(data['Close'])
+                            # Vérifier que Price contient des données numériques
+                            if data['Price'].dtype.kind in 'iuf':  # i: int, u: uint, f: float
+                                returns = data['Price'].pct_change(fill_method=None).dropna()
+                                st.line_chart(data['Price'])
                             else:
                                 st.error("Les données ne contiennent pas de valeurs numériques")
                     except Exception as e:
@@ -161,27 +161,27 @@ def main():
                 st.write("Aperçu des données:")
                 st.write(data.head())
                 
-                # Vérifier que la colonne 'Close' existe
-                if 'Close' not in data.columns:
-                    st.warning("La colonne 'Close' n'a pas été trouvée. Sélectionnez la colonne contenant les prix:")
+                # Vérifier que la colonne 'Price' existe
+                if 'Price' not in data.columns:
+                    st.warning("La colonne 'Price' n'a pas été trouvée. Sélectionnez la colonne contenant les prix:")
                     price_column = st.selectbox("Colonne des prix", data.columns)
                     if price_column:
-                        # Créer une colonne 'Close' à partir de la colonne sélectionnée
-                        data['Close'] = pd.to_numeric(data[price_column], errors='coerce')
+                        # Créer une colonne 'Price' à partir de la colonne sélectionnée
+                        data['Price'] = pd.to_numeric(data[price_column], errors='coerce')
                 
                 # Convertir en nombres si nécessaire
-                if 'Close' in data.columns:
-                    data['Close'] = pd.to_numeric(data['Close'], errors='coerce')
+                if 'Price' in data.columns:
+                    data['Price'] = pd.to_numeric(data['Price'], errors='coerce')
                     # Vérifier et alerter l'utilisateur sur les valeurs manquantes
-                    missing = data['Close'].isna().sum()
+                    missing = data['Price'].isna().sum()
                     if missing > 0:
                         st.warning(f"{missing} valeurs manquantes trouvées et ignorées.")
                     
                     # Calculer les rendements en ignorant les valeurs manquantes
-                    returns = data['Close'].dropna().pct_change(fill_method=None).dropna()
+                    returns = data['Price'].dropna().pct_change(fill_method=None).dropna()
                     
                     if len(returns) > 0:
-                        st.line_chart(data['Close'].dropna())
+                        st.line_chart(data['Price'].dropna())
                     else:
                         st.error("Impossible de calculer les rendements. Données insuffisantes.")
                 else:
@@ -193,21 +193,21 @@ def main():
             try:
                 # Essayer de charger le fichier BTC-USD.csv
                 data = pd.read_csv('BTC-USD.csv', parse_dates=['Date'], index_col='Date')
-                if 'Close' in data.columns:
-                    returns = data['Close'].pct_change(fill_method=None).dropna()
+                if 'Price' in data.columns:
+                    returns = data['Price'].pct_change(fill_method=None).dropna()
                     st.success("Données d'exemple chargées avec succès")
-                    st.line_chart(data['Close'])
+                    st.line_chart(data['Price'])
                 else:
-                    st.error("Format de données inattendu (pas de colonne 'Close')")
+                    st.error("Format de données inattendu (pas de colonne 'Price')")
             except FileNotFoundError:
                 st.error("Le fichier BTC-USD.csv n'a pas été trouvé")
                 # Créer des données d'exemple
                 dates = pd.date_range(start=datetime.now()-timedelta(days=365), periods=365)
-                close_prices = np.cumsum(np.random.normal(0, 1, 365)) + 100
-                data = pd.DataFrame({'Close': close_prices}, index=dates)
-                returns = data['Close'].pct_change(fill_method=None).dropna()
+                Price_prices = np.cumsum(np.random.normal(0, 1, 365)) + 100
+                data = pd.DataFrame({'Price': Price_prices}, index=dates)
+                returns = data['Price'].pct_change(fill_method=None).dropna()
                 st.success("Données d'exemple générées avec succès")
-                st.line_chart(data['Close'])
+                st.line_chart(data['Price'])
             except Exception as e:
                 st.error(f"Erreur lors du chargement des données d'exemple: {str(e)}")
     
@@ -242,8 +242,8 @@ def main():
         price_paths = np.zeros((n_simulations, 30))
         
         # Vérifier que l'accès à la dernière valeur est sûr
-        if data['Close'].dropna().shape[0] > 0:
-            last_price = data['Close'].dropna().iloc[-1]
+        if data['Price'].dropna().shape[0] > 0:
+            last_price = data['Price'].dropna().iloc[-1]
             
             # Éviter les valeurs extrêmes pour la volatilité initiale
             init_vol = max(min(returns.std(), 0.05), 0.001)
@@ -251,7 +251,7 @@ def main():
             # Essayer de charger les données historiques
             try:
                 historical_data = pd.read_csv('BTC-USD.csv', parse_dates=['Date'], index_col='Date')
-                historical_prices = historical_data['Close'].iloc[-60:]  # 60 dernières valeurs
+                historical_prices = historical_data['Price'].iloc[-60:]  # 60 dernières valeurs
             except Exception:
                 historical_prices = pd.Series()
             
