@@ -19,12 +19,21 @@ class BNSModel:
         self.mu = mu
         self.beta = beta
 
-    def simulate(self, S0: float, days: int = 30, dt: float = 1.0) -> Tuple[List[float], List[float]]:
-        """Simulate price and volatility paths."""
+    def simulate(self, S0: float, T: int = 30, dt: float = 1.0) -> Tuple[List[float], List[float]]:
+        """Simulate price and volatility paths.
+        
+        Args:
+            S0: Initial price
+            T: Number of time steps to simulate (default: 30)
+            dt: Time step size (default: 1.0)
+            
+        Returns:
+            Tuple containing price path and volatility path
+        """
         # Generate volatility path
         vol_path = self.igou.simulate(
             X0=self.igou.a/self.igou.b,  # Stationary initial value
-            T=days,
+            T=T,
             dt=dt
         )
         
@@ -35,7 +44,7 @@ class BNSModel:
         price_path = [float(S0)]
         sqrt_dt = np.sqrt(dt)
         
-        for t in range(1, days):
+        for t in range(1, T):
             # Valeurs de sécurité en cas de NaN ou Inf
             if np.isnan(price_path[-1]) or np.isinf(price_path[-1]):
                 price_path.append(price_path[-2] if len(price_path) > 1 else S0)

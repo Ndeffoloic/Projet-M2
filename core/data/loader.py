@@ -131,6 +131,7 @@ def load_asset_data(asset: str, timeframe: str) -> pd.Series:
             
         # --- 7. Retour des données nettoyées ---
         logger.info(f"Données chargées avec succès: {len(price_series)} points")
+        # Retourner l'ensemble complet des données sans troncation
         return price_series
         
     except FileNotFoundError:

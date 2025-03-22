@@ -140,7 +140,8 @@ class VolatilityPlotter:
         model_returns = clean_data(model_returns)
         vol_series = clean_data(vol_series)
         
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        # Utiliser une figure plus grande pour les graphiques
+        fig, axes = plt.subplots(2, 2, figsize=(20, 15))
         
         # Vérification que nous avons assez de données
         min_data_length = 2  # Minimum requis pour l'autocorrélation
@@ -157,8 +158,8 @@ class VolatilityPlotter:
                 
                 axes[0, 0].hist(returns, bins=bins, alpha=0.5, label='Données réelles', density=True)
                 axes[0, 0].hist(model_returns, bins=bins, alpha=0.5, label=f'Modèle {model_name}', density=True)
-                axes[0, 0].set_title('Distribution des rendements')
-                axes[0, 0].legend()
+                axes[0, 0].set_title('Distribution des rendements', fontsize=14)
+                axes[0, 0].legend(fontsize=12)
             except Exception as e:
                 axes[0, 0].text(0.5, 0.5, f"Erreur d'histogramme: {str(e)}", 
                             ha='center', va='center', transform=axes[0, 0].transAxes)
@@ -171,14 +172,9 @@ class VolatilityPlotter:
         if len(returns) > min_data_length:
             try:
                 from scipy import stats
-                # Limiter aux valeurs entre -5 et 5 pour le Q-Q plot
-                returns_for_qq = returns[(returns >= -5) & (returns <= 5)]
-                if len(returns_for_qq) > 5:
-                    stats.probplot(returns_for_qq, dist="norm", plot=axes[0, 1])
-                    axes[0, 1].set_title('Q-Q Plot (Normalité des rendements réels)')
-                else:
-                    axes[0, 1].text(0.5, 0.5, "Données insuffisantes après filtrage des extrêmes", 
-                            ha='center', va='center', transform=axes[0, 1].transAxes)
+                # Utiliser l'ensemble des données pour le Q-Q plot
+                stats.probplot(returns, dist="norm", plot=axes[0, 1])
+                axes[0, 1].set_title('Q-Q Plot (Normalité des rendements réels)', fontsize=14)
             except Exception as e:
                 axes[0, 1].text(0.5, 0.5, f"Erreur de Q-Q plot: {str(e)}", 
                             ha='center', va='center', transform=axes[0, 1].transAxes)
@@ -193,9 +189,9 @@ class VolatilityPlotter:
                 # Limiter les valeurs extrêmes pour l'affichage
                 vol_for_plot = np.clip(vol_series.values, 0, 2)
                 axes[1, 0].plot(vol_for_plot)
-                axes[1, 0].set_title(f'Volatilité simulée ({model_name})')
-                axes[1, 0].set_xlabel('Temps')
-                axes[1, 0].set_ylabel('Volatilité')
+                axes[1, 0].set_title(f'Volatilité simulée ({model_name})', fontsize=14)
+                axes[1, 0].set_xlabel('Temps', fontsize=12)
+                axes[1, 0].set_ylabel('Volatilité', fontsize=12)
             except Exception as e:
                 axes[1, 0].text(0.5, 0.5, f"Erreur de tracé de volatilité: {str(e)}", 
                             ha='center', va='center', transform=axes[1, 0].transAxes)
@@ -208,10 +204,9 @@ class VolatilityPlotter:
         if has_enough_data and len(model_returns) >= 5:  # Au moins 5 points pour une ACF significative
             try:
                 from statsmodels.graphics.tsaplots import plot_acf
-                # Limiter les valeurs extrêmes pour l'ACF
-                returns_squared = np.clip(model_returns**2, 0, 25)
-                plot_acf(returns_squared, lags=min(20, len(model_returns) // 2), ax=axes[1, 1])
-                axes[1, 1].set_title(f'Autocorrélation des rendements au carré ({model_name})')
+                # Utiliser l'ensemble des données pour l'autocorrélation
+                plot_acf(model_returns**2, lags=min(20, len(model_returns) // 2), ax=axes[1, 1])
+                axes[1, 1].set_title(f'Autocorrélation des rendements au carré ({model_name})', fontsize=14)
             except Exception as e:
                 axes[1, 1].text(0.5, 0.5, f"Erreur lors du calcul de l'autocorrélation: {str(e)}", 
                             ha='center', va='center', transform=axes[1, 1].transAxes)

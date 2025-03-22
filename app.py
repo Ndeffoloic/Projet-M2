@@ -70,7 +70,7 @@ def main():
             init_vol = np.sqrt(sigma_sq)
             
             # Exécuter les simulations de tous les modèles et générer les visualisations
-            run_simulations(last_price, igou_model, bs_model, bns_model, config["n_simulations"], init_vol)
+            run_simulations(last_price, igou_model, bs_model, bns_model, config["n_simulations"], init_vol, len(price_series))
             
             # Calculer les rendements des différents modèles pour les diagnostics
             returns = price_series.pct_change().dropna()
@@ -81,21 +81,24 @@ def main():
             bns_prices = []
             vol_series = []
             
+            # Utiliser toute la longueur des données historiques
+            T = len(price_series)
+            
             # Effectuer plusieurs simulations pour chaque modèle
             for _ in range(5):  # Quelques simulations pour les diagnostics
                 # IG-OU simulation
-                vol_path = igou_model.simulate(X0=init_vol, T=30)
+                vol_path = igou_model.simulate(X0=init_vol, T=T)
                 price_path = [last_price]
                 for vol in vol_path[1:]:  # Skip first vol since we use it for the first step
                     price_path.append(price_path[-1] * (1 + np.random.normal(0, vol)))
                 igou_prices.extend(price_path)
                 
                 # Black-Scholes simulation
-                bs_path = bs_model.simulate(S0=last_price, days=30)
+                bs_path = bs_model.simulate(S0=last_price, days=T)
                 bs_prices.extend(bs_path)
                 
                 # BNS simulation
-                bns_path, bns_vol = bns_model.simulate(last_price)
+                bns_path, bns_vol = bns_model.simulate(last_price, T=T)
                 bns_prices.extend(bns_path)
                 vol_series.extend(bns_vol)
             
@@ -104,41 +107,35 @@ def main():
             bs_returns = pd.Series(bs_prices).pct_change().dropna()
             bns_returns = pd.Series(bns_prices).pct_change().dropna()
             
-            # Créer trois sets de graphiques diagnostics (un pour chaque modèle)
-            st.subheader("Diagnostics des modèles")
-            col1, col2, col3 = st.columns(3)
+            # Créer trois rubriques distinctes de diagnostics (une pour chaque modèle)
+            st.header("Diagnostic du modèle Black-Scholes")
+            st.pyplot(VolatilityPlotter.plot_diagnostics(
+                returns=returns,
+                model_returns=bs_returns,
+                vol_series=pd.Series([bs_sigma] * len(vol_path)),  # Volatilité constante
+                model_name="Black-Scholes"
+            ))
             
-            with col1:
-                st.subheader("Modèle IG-OU")
-                st.pyplot(VolatilityPlotter.plot_diagnostics(
-                    returns=returns,
-                    model_returns=igou_returns,
-                    vol_series=pd.Series(vol_path),
-                    model_name="IG-OU"
-                ))
-                
-            with col2:
-                st.subheader("Modèle Black-Scholes")
-                st.pyplot(VolatilityPlotter.plot_diagnostics(
-                    returns=returns,
-                    model_returns=bs_returns,
-                    vol_series=pd.Series([bs_sigma] * len(vol_path)),  # Volatilité constante
-                    model_name="Black-Scholes"
-                ))
-                
-            with col3:
-                st.subheader("Modèle BNS")
-                st.pyplot(VolatilityPlotter.plot_diagnostics(
-                    returns=returns,
-                    model_returns=bns_returns,
-                    vol_series=pd.Series(vol_series),
-                    model_name="BNS"
-                ))
+            st.header("Diagnostic du modèle IG-OU")
+            st.pyplot(VolatilityPlotter.plot_diagnostics(
+                returns=returns,
+                model_returns=igou_returns,
+                vol_series=pd.Series(vol_path),
+                model_name="IG-OU"
+            ))
+            
+            st.header("Diagnostic du modèle BNS")
+            st.pyplot(VolatilityPlotter.plot_diagnostics(
+                returns=returns,
+                model_returns=bns_returns,
+                vol_series=pd.Series(vol_series),
+                model_name="BNS"
+            ))
         else:
             st.error("Données insuffisantes pour la simulation")
 
 def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackScholesModel, 
-                   bns_model: BNSModel, n_simulations: int, init_vol: float):
+                   bns_model: BNSModel, n_simulations: int, init_vol: float, T: int):
     """Execute and display simulations.
     
     Args:
@@ -148,6 +145,7 @@ def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackSch
         bns_model: BNS model instance
         n_simulations: Number of simulations to run
         init_vol: Initial volatility
+        T: Total number of time steps
     """
     # Create figure with two subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
@@ -162,7 +160,7 @@ def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackSch
     # Exécuter les simulations pour chaque modèle
     for _ in range(n_simulations):
         # Simulation IG-OU
-        vol_path = igou_model.simulate(X0=init_vol, T=30)
+        vol_path = igou_model.simulate(X0=init_vol, T=T)
         igou_vol_paths.append(vol_path)
         
         # Simulation des prix IG-OU
@@ -172,11 +170,11 @@ def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackSch
         igou_price_paths.append(price_path)
         
         # Simulation Black-Scholes 
-        bs_path = bs_model.simulate(S0=last_price, days=30)
+        bs_path = bs_model.simulate(S0=last_price, days=T)
         bs_price_paths.append(bs_path)
         
         # Simulation BNS
-        bns_prices, bns_vol = bns_model.simulate(last_price)
+        bns_prices, bns_vol = bns_model.simulate(last_price, T=T)
         bns_price_paths.append(bns_prices)
         bns_vol_paths.append(bns_vol)
     
