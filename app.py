@@ -119,16 +119,38 @@ def main():
                 st.header("Diagnostic du modèle Black-Scholes")
                 bs_diag = VolatilityPlotter.plot_diagnostics(returns, bs_returns, None, "Black-Scholes")
                 st.pyplot(bs_diag)
+                
+                # Nouveau : ACF des résidus carrés pour BS
+                st.subheader("ACF des résidus carrés (Black-Scholes)")
+                fig_bs_resid = VolatilityPlotter.plot_residuals_acf(returns, bs_returns, "Black-Scholes")
+                st.pyplot(fig_bs_resid)
             
             if show_igou:
                 st.header("Diagnostic du modèle IG-OU")
                 igou_diag = VolatilityPlotter.plot_diagnostics(returns, igou_returns, igou_vol_paths, "IG-OU")
                 st.pyplot(igou_diag)
+                
+                # Nouveau : ACF des résidus carrés pour IG-OU
+                st.subheader("ACF des résidus carrés (IG-OU)")
+                fig_igou_resid = VolatilityPlotter.plot_residuals_acf(returns, igou_returns, "IG-OU")
+                st.pyplot(fig_igou_resid)
             
             if show_bns:
                 st.header("Diagnostic du modèle BNS")
                 bns_diag = VolatilityPlotter.plot_diagnostics(returns, bns_returns, bns_vol_paths, "BNS")
                 st.pyplot(bns_diag)
+                
+                # Nouveau : ACF des résidus carrés pour BNS
+                st.subheader("ACF des résidus carrés (BNS)")
+                fig_bns_resid = VolatilityPlotter.plot_residuals_acf(returns, bns_returns, "BNS")
+                st.pyplot(fig_bns_resid)
+                
+            # Graphique comparatif des ACF des résidus (Figure 8)
+            st.header("Comparaison des ACF des résidus carrés")
+            fig_resid_comparison = plt.figure(figsize=(12, 6))
+            ax = fig_resid_comparison.add_subplot(111)
+            plot_residuals_comparison(ax, returns, igou_returns, bs_returns, bns_returns)
+            st.pyplot(fig_resid_comparison)
         else:
             st.error("Données insuffisantes pour la simulation")
 

@@ -36,27 +36,19 @@ def render_sidebar() -> dict:
         help="Number of Monte Carlo simulations"
     )
     
-    a = st.sidebar.number_input(
-        "Parameter a",
-        min_value=1e-10,
-        max_value=10.0,
-        value=2.2395e-7,
-        format="%.10f",
-        help="IG-OU parameter a"
-    )
+    # Note explicative sur les paramètres a et b
+    st.sidebar.info("""
+    **Note sur les paramètres a et b:**
     
-    b = st.sidebar.number_input(
-        "Parameter b",
-        min_value=1e-10,
-        max_value=10.0,
-        value=1.0,
-        help="IG-OU parameter b"
-    )
+    Selon l'article WCE 2009 (équation 3.16), les paramètres a et b de la distribution Inverse Gaussienne sont calculés automatiquement à partir de:
+    - a = Ȳ * b / (e^(λh) - 1)
+    - b = sqrt[(Var(Y) * (e^(2λh) - 1)) / (e^(λh) - 1)^3]
+    
+    Ces paramètres ne doivent pas être saisis manuellement.
+    """)
     
     return {
         "asset": asset,
         "timeframe": timeframe,
-        "n_simulations": n_simulations,
-        "a": a,
-        "b": b
+        "n_simulations": n_simulations
     }
