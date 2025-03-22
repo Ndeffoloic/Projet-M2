@@ -127,6 +127,18 @@ class VolatilityPlotter:
         Returns:
             matplotlib.figure.Figure: Figure avec les graphiques de diagnostic
         """
+        # Nettoyage des données - supprimer les valeurs NaN et Inf
+        def clean_data(data):
+            if isinstance(data, pd.Series):
+                return data[np.isfinite(data)]
+            else:
+                return pd.Series([x for x in data if np.isfinite(x)])
+                
+        # Nettoyer toutes les séries
+        returns = clean_data(returns)
+        model_returns = clean_data(model_returns)
+        vol_series = clean_data(vol_series)
+        
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
         
         # Vérification que nous avons assez de données
@@ -135,10 +147,20 @@ class VolatilityPlotter:
         
         # Graphique 1: Comparaison des distributions de rendements
         if len(returns) > 0 and len(model_returns) > 0:
-            axes[0, 0].hist(returns, bins=min(30, len(returns)), alpha=0.5, label='Données réelles', density=True)
-            axes[0, 0].hist(model_returns, bins=min(30, len(model_returns)), alpha=0.5, label='Modèle BNS', density=True)
-            axes[0, 0].set_title('Distribution des rendements')
-            axes[0, 0].legend()
+            try:
+                # Déterminer des limites raisonnables pour les histogrammes
+                min_val = max(min(returns.min(), model_returns.min()), -5)
+                max_val = min(max(returns.max(), model_returns.max()), 5)
+                
+                bins = np.linspace(min_val, max_val, min(30, len(model_returns)))
+                
+                axes[0, 0].hist(returns, bins=bins, alpha=0.5, label='Données réelles', density=True)
+                axes[0, 0].hist(model_returns, bins=bins, alpha=0.5, label='Modèle BNS', density=True)
+                axes[0, 0].set_title('Distribution des rendements')
+                axes[0, 0].legend()
+            except Exception as e:
+                axes[0, 0].text(0.5, 0.5, f"Erreur d'histogramme: {str(e)}", 
+                            ha='center', va='center', transform=axes[0, 0].transAxes)
         else:
             axes[0, 0].text(0.5, 0.5, "Données insuffisantes pour l'histogramme", 
                         ha='center', va='center', transform=axes[0, 0].transAxes)
@@ -146,9 +168,19 @@ class VolatilityPlotter:
         
         # Graphique 2: Q-Q Plot
         if len(returns) > min_data_length:
-            from scipy import stats
-            stats.probplot(returns, dist="norm", plot=axes[0, 1])
-            axes[0, 1].set_title('Q-Q Plot (Normalité des rendements réels)')
+            try:
+                from scipy import stats
+                # Limiter aux valeurs entre -5 et 5 pour le Q-Q plot
+                returns_for_qq = returns[(returns >= -5) & (returns <= 5)]
+                if len(returns_for_qq) > 5:
+                    stats.probplot(returns_for_qq, dist="norm", plot=axes[0, 1])
+                    axes[0, 1].set_title('Q-Q Plot (Normalité des rendements réels)')
+                else:
+                    axes[0, 1].text(0.5, 0.5, "Données insuffisantes après filtrage des extrêmes", 
+                            ha='center', va='center', transform=axes[0, 1].transAxes)
+            except Exception as e:
+                axes[0, 1].text(0.5, 0.5, f"Erreur de Q-Q plot: {str(e)}", 
+                            ha='center', va='center', transform=axes[0, 1].transAxes)
         else:
             axes[0, 1].text(0.5, 0.5, "Données insuffisantes pour le Q-Q Plot", 
                         ha='center', va='center', transform=axes[0, 1].transAxes)
@@ -156,10 +188,16 @@ class VolatilityPlotter:
         
         # Graphique 3: Volatilité au cours du temps
         if len(vol_series) > 0:
-            axes[1, 0].plot(vol_series.values)
-            axes[1, 0].set_title('Volatilité simulée (BNS)')
-            axes[1, 0].set_xlabel('Temps')
-            axes[1, 0].set_ylabel('Volatilité')
+            try:
+                # Limiter les valeurs extrêmes pour l'affichage
+                vol_for_plot = np.clip(vol_series.values, 0, 2)
+                axes[1, 0].plot(vol_for_plot)
+                axes[1, 0].set_title('Volatilité simulée (BNS)')
+                axes[1, 0].set_xlabel('Temps')
+                axes[1, 0].set_ylabel('Volatilité')
+            except Exception as e:
+                axes[1, 0].text(0.5, 0.5, f"Erreur de tracé de volatilité: {str(e)}", 
+                            ha='center', va='center', transform=axes[1, 0].transAxes)
         else:
             axes[1, 0].text(0.5, 0.5, "Données de volatilité insuffisantes", 
                         ha='center', va='center', transform=axes[1, 0].transAxes)
@@ -169,7 +207,9 @@ class VolatilityPlotter:
         if has_enough_data and len(model_returns) >= 5:  # Au moins 5 points pour une ACF significative
             try:
                 from statsmodels.graphics.tsaplots import plot_acf
-                plot_acf(model_returns**2, lags=min(20, len(model_returns) // 2), ax=axes[1, 1])
+                # Limiter les valeurs extrêmes pour l'ACF
+                returns_squared = np.clip(model_returns**2, 0, 25)
+                plot_acf(returns_squared, lags=min(20, len(model_returns) // 2), ax=axes[1, 1])
                 axes[1, 1].set_title('Autocorrélation des rendements au carré (BNS)')
             except Exception as e:
                 axes[1, 1].text(0.5, 0.5, f"Erreur lors du calcul de l'autocorrélation: {str(e)}", 
