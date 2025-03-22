@@ -33,8 +33,37 @@ def load_asset_data(asset: str, timeframe: str) -> pd.DataFrame:
             file_path,
             parse_dates=['Date'],
             index_col='Date',
-            dtype={'Close': str}  # Read as string first to handle quotes and commas
+            dtype={'Close': str, 'Price': str}  # Read as string first to handle quotes and commas
         )
+        
+        # Try to find 'Close' column, if not found, try 'Price' column
+        if 'Close' in data.columns:
+            price_column = 'Close'
+        elif 'Price' in data.columns:
+            price_column = 'Price'
+        else:
+            st.error(f"Neither 'Close' nor 'Price' column found in {file_path}")
+            return None
+            
+        # Clean the price column:
+        # 1. Remove quotes
+        # 2. Remove commas (thousand separators)
+        # 3. Convert to float
+        price_series = (data[price_column]
+                      .str.replace('"', '', regex=False)
+                      .str.replace(',', '', regex=False)
+                      .astype(float))
+        
+        # Remove any NaN values
+        price_series = price_series.dropna()
+        
+        if len(price_series) == 0:
+            st.error("No valid numeric data found in price column")
+            return None
+            
+        # Return a DataFrame with Date index and the price column
+        result_df = pd.DataFrame({'Close': price_series}, index=price_series.index)
+        return result_df
         
         if 'Close' not in data.columns:
             st.error(f"Column 'Close' missing in {file_path}")

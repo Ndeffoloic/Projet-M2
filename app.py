@@ -34,9 +34,9 @@ def main():
     # Display historical data
     st.subheader(f"Données historiques - {config['asset']} ({config['timeframe']})")
     st.line_chart(price_series)
-    
+    print(config["timeframe"])
     # Convert price series to DataFrame with 'Close' column
-    if config["timeframe"] in ["day", "hour"] or config['asset'] == "GLE.PA" : 
+    if config["timeframe"] in ["minute", "hour"] or config['asset'] == "GLE.PA" : 
         price_df = pd.DataFrame({'Close': price_series})
     else:
         price_df = pd.DataFrame({'Price': price_series})
