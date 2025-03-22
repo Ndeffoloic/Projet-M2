@@ -196,37 +196,59 @@ def plot_all_predictions(ax, igou_paths, bs_paths, bns_paths):
         bs_paths: Trajectoires des prix du modèle Black-Scholes
         bns_paths: Trajectoires des prix du modèle BNS
     """
+    # Vérifier que les chemins ne sont pas vides
+    if not igou_paths or not bs_paths or not bns_paths:
+        ax.text(0.5, 0.5, "Données de prix insuffisantes", 
+                ha='center', va='center', transform=ax.transAxes)
+        return
+    
+    # Vérifier et standardiser les longueurs des séries
+    lengths_igou = [len(path) for path in igou_paths]
+    lengths_bs = [len(path) for path in bs_paths]
+    lengths_bns = [len(path) for path in bns_paths]
+    
+    # Utiliser la longueur minimale pour tous
+    min_length = min(min(lengths_igou), min(lengths_bs), min(lengths_bns))
+    
+    # Tronquer à la longueur minimale commune pour éviter les problèmes
+    igou_paths_trimmed = [path[:min_length] for path in igou_paths]
+    bs_paths_trimmed = [path[:min_length] for path in bs_paths]
+    bns_paths_trimmed = [path[:min_length] for path in bns_paths]
+    
     # Conversion en tableaux numpy
-    igou_paths = np.array(igou_paths)
-    bs_paths = np.array(bs_paths)
-    bns_paths = np.array(bns_paths)
+    igou_paths_np = np.array(igou_paths_trimmed)
+    bs_paths_np = np.array(bs_paths_trimmed)
+    bns_paths_np = np.array(bns_paths_trimmed)
     
     # Calcul des statistiques pour IG-OU
-    mean_igou = np.mean(igou_paths, axis=0)
-    p05_igou = np.percentile(igou_paths, 5, axis=0)
-    p95_igou = np.percentile(igou_paths, 95, axis=0)
+    mean_igou = np.mean(igou_paths_np, axis=0)
+    p05_igou = np.percentile(igou_paths_np, 5, axis=0)
+    p95_igou = np.percentile(igou_paths_np, 95, axis=0)
     
     # Calcul des statistiques pour Black-Scholes
-    mean_bs = np.mean(bs_paths, axis=0)
-    p05_bs = np.percentile(bs_paths, 5, axis=0)
-    p95_bs = np.percentile(bs_paths, 95, axis=0)
+    mean_bs = np.mean(bs_paths_np, axis=0)
+    p05_bs = np.percentile(bs_paths_np, 5, axis=0)
+    p95_bs = np.percentile(bs_paths_np, 95, axis=0)
     
     # Calcul des statistiques pour BNS
-    mean_bns = np.mean(bns_paths, axis=0)
-    p05_bns = np.percentile(bns_paths, 5, axis=0)
-    p95_bns = np.percentile(bns_paths, 95, axis=0)
+    mean_bns = np.mean(bns_paths_np, axis=0)
+    p05_bns = np.percentile(bns_paths_np, 5, axis=0)
+    p95_bns = np.percentile(bns_paths_np, 95, axis=0)
+    
+    # Création de l'axe X
+    x_axis = np.arange(len(mean_igou))
     
     # Tracer IG-OU
-    ax.plot(mean_igou, color='blue', label='IG-OU (Moyenne)')
-    ax.fill_between(range(len(mean_igou)), p05_igou, p95_igou, color='blue', alpha=0.1, label='IG-OU (90% IC)')
+    ax.plot(x_axis, mean_igou, color='blue', label='IG-OU (Moyenne)')
+    ax.fill_between(x_axis, p05_igou, p95_igou, color='blue', alpha=0.1, label='IG-OU (90% IC)')
     
     # Tracer Black-Scholes
-    ax.plot(mean_bs, color='green', linestyle='--', label='Black-Scholes (Moyenne)')
-    ax.fill_between(range(len(mean_bs)), p05_bs, p95_bs, color='green', alpha=0.1, label='BS (90% IC)')
+    ax.plot(x_axis, mean_bs, color='green', linestyle='--', label='Black-Scholes (Moyenne)')
+    ax.fill_between(x_axis, p05_bs, p95_bs, color='green', alpha=0.1, label='BS (90% IC)')
     
     # Tracer BNS
-    ax.plot(mean_bns, color='red', linestyle='-.', label='BNS (Moyenne)')
-    ax.fill_between(range(len(mean_bns)), p05_bns, p95_bns, color='red', alpha=0.1, label='BNS (90% IC)')
+    ax.plot(x_axis, mean_bns, color='red', linestyle='-.', label='BNS (Moyenne)')
+    ax.fill_between(x_axis, p05_bns, p95_bns, color='red', alpha=0.1, label='BNS (90% IC)')
     
     # Personnalisation du graphique
     ax.set_title('Prédictions de prix selon les trois modèles', fontsize=14)
@@ -243,19 +265,40 @@ def plot_all_volatility(ax, igou_vol_paths, bns_vol_paths):
         igou_vol_paths: Trajectoires de volatilité du modèle IG-OU
         bns_vol_paths: Trajectoires de volatilité du modèle BNS
     """
-    # Conversion en tableaux numpy
-    igou_vol_paths = np.array(igou_vol_paths)
-    bns_vol_paths = np.array(bns_vol_paths)
+    # Vérifier que les chemins ne sont pas vides
+    if not igou_vol_paths or not bns_vol_paths:
+        ax.text(0.5, 0.5, "Données de volatilité insuffisantes", 
+                ha='center', va='center', transform=ax.transAxes)
+        return
+        
+    # Vérifier et standardiser les longueurs des séries
+    lengths_igou = [len(path) for path in igou_vol_paths]
+    lengths_bns = [len(path) for path in bns_vol_paths]
+    
+    # Utiliser la longueur minimale pour tous
+    min_length = min(min(lengths_igou), min(lengths_bns))
+    
+    # Tronquer à la longueur minimale commune pour éviter les problèmes
+    igou_vol_paths_trimmed = [path[:min_length] for path in igou_vol_paths]
+    bns_vol_paths_trimmed = [path[:min_length] for path in bns_vol_paths]
+    
+    # Conversion en tableaux numpy avec dimensions correctes
+    igou_vol_paths_np = np.array(igou_vol_paths_trimmed)
+    bns_vol_paths_np = np.array(bns_vol_paths_trimmed)
+    
+    # Protection contre les données aberrantes
+    igou_vol_paths_np = np.clip(igou_vol_paths_np, 0, 2.0)
+    bns_vol_paths_np = np.clip(bns_vol_paths_np, 0, 2.0)
     
     # Calcul des statistiques pour IG-OU
-    mean_igou_vol = np.mean(igou_vol_paths, axis=0)
-    p05_igou_vol = np.percentile(igou_vol_paths, 5, axis=0)
-    p95_igou_vol = np.percentile(igou_vol_paths, 95, axis=0)
+    mean_igou_vol = np.mean(igou_vol_paths_np, axis=0)
+    p05_igou_vol = np.percentile(igou_vol_paths_np, 5, axis=0)
+    p95_igou_vol = np.percentile(igou_vol_paths_np, 95, axis=0)
     
     # Calcul des statistiques pour BNS
-    mean_bns_vol = np.mean(bns_vol_paths, axis=0)
-    p05_bns_vol = np.percentile(bns_vol_paths, 5, axis=0)
-    p95_bns_vol = np.percentile(bns_vol_paths, 95, axis=0)
+    mean_bns_vol = np.mean(bns_vol_paths_np, axis=0)
+    p05_bns_vol = np.percentile(bns_vol_paths_np, 5, axis=0)
+    p95_bns_vol = np.percentile(bns_vol_paths_np, 95, axis=0)
     
     # Tracer IG-OU
     ax.plot(mean_igou_vol, color='blue', label='IG-OU (Moyenne)')
