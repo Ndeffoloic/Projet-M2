@@ -68,59 +68,211 @@ def main():
         if len(price_series) > 0:
             last_price = price_series.iloc[-1]
             init_vol = np.sqrt(sigma_sq)
-            run_simulations(last_price, igou_model, bs_model, config["n_simulations"], init_vol)
             
-            # BNS model simulation
-            bns_prices, bns_vol = bns_model.simulate(last_price)
+            # Exécuter les simulations de tous les modèles et générer les visualisations
+            run_simulations(last_price, igou_model, bs_model, bns_model, config["n_simulations"], init_vol)
             
-            # Diagnostic plots for BNS model
-            st.pyplot(VolatilityPlotter.plot_diagnostics(
-                returns=price_series.pct_change().dropna(),
-                model_returns=pd.Series(bns_prices).pct_change().dropna(),
-                vol_series=pd.Series(bns_vol)
-            ))
+            # Calculer les rendements des différents modèles pour les diagnostics
+            returns = price_series.pct_change().dropna()
+            
+            # Simuler tous les modèles pour le graphique de diagnostic
+            igou_prices = []
+            bs_prices = []
+            bns_prices = []
+            vol_series = []
+            
+            # Effectuer plusieurs simulations pour chaque modèle
+            for _ in range(5):  # Quelques simulations pour les diagnostics
+                # IG-OU simulation
+                vol_path = igou_model.simulate(X0=init_vol, T=30)
+                price_path = [last_price]
+                for vol in vol_path[1:]:  # Skip first vol since we use it for the first step
+                    price_path.append(price_path[-1] * (1 + np.random.normal(0, vol)))
+                igou_prices.extend(price_path)
+                
+                # Black-Scholes simulation
+                bs_path = bs_model.simulate(S0=last_price, days=30)
+                bs_prices.extend(bs_path)
+                
+                # BNS simulation
+                bns_path, bns_vol = bns_model.simulate(last_price)
+                bns_prices.extend(bns_path)
+                vol_series.extend(bns_vol)
+            
+            # Convertir en séries pour le diagnostic
+            igou_returns = pd.Series(igou_prices).pct_change().dropna()
+            bs_returns = pd.Series(bs_prices).pct_change().dropna()
+            bns_returns = pd.Series(bns_prices).pct_change().dropna()
+            
+            # Créer trois sets de graphiques diagnostics (un pour chaque modèle)
+            st.subheader("Diagnostics des modèles")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.subheader("Modèle IG-OU")
+                st.pyplot(VolatilityPlotter.plot_diagnostics(
+                    returns=returns,
+                    model_returns=igou_returns,
+                    vol_series=pd.Series(vol_path),
+                    model_name="IG-OU"
+                ))
+                
+            with col2:
+                st.subheader("Modèle Black-Scholes")
+                st.pyplot(VolatilityPlotter.plot_diagnostics(
+                    returns=returns,
+                    model_returns=bs_returns,
+                    vol_series=pd.Series([bs_sigma] * len(vol_path)),  # Volatilité constante
+                    model_name="Black-Scholes"
+                ))
+                
+            with col3:
+                st.subheader("Modèle BNS")
+                st.pyplot(VolatilityPlotter.plot_diagnostics(
+                    returns=returns,
+                    model_returns=bns_returns,
+                    vol_series=pd.Series(vol_series),
+                    model_name="BNS"
+                ))
         else:
             st.error("Données insuffisantes pour la simulation")
 
 def run_simulations(last_price: float, igou_model: IGOUModel, bs_model: BlackScholesModel, 
-                   n_simulations: int, init_vol: float):
+                   bns_model: BNSModel, n_simulations: int, init_vol: float):
     """Execute and display simulations.
     
     Args:
         last_price: Last observed price
         igou_model: IG-OU model instance
         bs_model: Black-Scholes model instance
+        bns_model: BNS model instance
         n_simulations: Number of simulations to run
         init_vol: Initial volatility
     """
     # Create figure with two subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
     
-    # Run IG-OU simulations
-    price_paths = []
-    vol_paths = []
+    # Listes pour stocker les trajectoires de prix et de volatilité
+    igou_price_paths = []
+    igou_vol_paths = []
+    bs_price_paths = []
+    bns_price_paths = []
+    bns_vol_paths = []
+    
+    # Exécuter les simulations pour chaque modèle
     for _ in range(n_simulations):
+        # Simulation IG-OU
         vol_path = igou_model.simulate(X0=init_vol, T=30)
-        vol_paths.append(vol_path)
+        igou_vol_paths.append(vol_path)
         
-        # Simulate price path using the volatility path
+        # Simulation des prix IG-OU
         price_path = [last_price]
         for vol in vol_path[1:]:  # Skip first vol since we use it for the first step
             price_path.append(price_path[-1] * (1 + np.random.normal(0, vol)))
-        price_paths.append(price_path)
+        igou_price_paths.append(price_path)
+        
+        # Simulation Black-Scholes 
+        bs_path = bs_model.simulate(S0=last_price, days=30)
+        bs_price_paths.append(bs_path)
+        
+        # Simulation BNS
+        bns_prices, bns_vol = bns_model.simulate(last_price)
+        bns_price_paths.append(bns_prices)
+        bns_vol_paths.append(bns_vol)
     
-    # Run Black-Scholes simulation
-    bs_path = bs_model.simulate(S0=last_price, days=30)
+    # Plot predictions pour les trois modèles
+    plot_all_predictions(ax1, igou_price_paths, bs_price_paths, bns_price_paths)
     
-    # Plot predictions and volatility
-    plot_predictions(ax1, price_paths, bs_path)
-    plot_volatility(ax2, vol_paths)
+    # Plot volatility pour les deux modèles avec volatilité stochastique
+    plot_all_volatility(ax2, igou_vol_paths, bns_vol_paths)
     
-    # Display plots
+    # Affichage des graphiques
     st.pyplot(fig)
+
+def plot_all_predictions(ax, igou_paths, bs_paths, bns_paths):
+    """Tracer les prédictions de prix pour les trois modèles.
     
-    # Show statistics
-    show_statistics(price_paths, vol_paths, bs_path)
+    Args:
+        ax: Axe matplotlib pour le tracé
+        igou_paths: Trajectoires des prix du modèle IG-OU
+        bs_paths: Trajectoires des prix du modèle Black-Scholes
+        bns_paths: Trajectoires des prix du modèle BNS
+    """
+    # Conversion en tableaux numpy
+    igou_paths = np.array(igou_paths)
+    bs_paths = np.array(bs_paths)
+    bns_paths = np.array(bns_paths)
+    
+    # Calcul des statistiques pour IG-OU
+    mean_igou = np.mean(igou_paths, axis=0)
+    p05_igou = np.percentile(igou_paths, 5, axis=0)
+    p95_igou = np.percentile(igou_paths, 95, axis=0)
+    
+    # Calcul des statistiques pour Black-Scholes
+    mean_bs = np.mean(bs_paths, axis=0)
+    p05_bs = np.percentile(bs_paths, 5, axis=0)
+    p95_bs = np.percentile(bs_paths, 95, axis=0)
+    
+    # Calcul des statistiques pour BNS
+    mean_bns = np.mean(bns_paths, axis=0)
+    p05_bns = np.percentile(bns_paths, 5, axis=0)
+    p95_bns = np.percentile(bns_paths, 95, axis=0)
+    
+    # Tracer IG-OU
+    ax.plot(mean_igou, color='blue', label='IG-OU (Moyenne)')
+    ax.fill_between(range(len(mean_igou)), p05_igou, p95_igou, color='blue', alpha=0.1, label='IG-OU (90% IC)')
+    
+    # Tracer Black-Scholes
+    ax.plot(mean_bs, color='green', linestyle='--', label='Black-Scholes (Moyenne)')
+    ax.fill_between(range(len(mean_bs)), p05_bs, p95_bs, color='green', alpha=0.1, label='BS (90% IC)')
+    
+    # Tracer BNS
+    ax.plot(mean_bns, color='red', linestyle='-.', label='BNS (Moyenne)')
+    ax.fill_between(range(len(mean_bns)), p05_bns, p95_bns, color='red', alpha=0.1, label='BNS (90% IC)')
+    
+    # Personnalisation du graphique
+    ax.set_title('Prédictions de prix selon les trois modèles', fontsize=14)
+    ax.set_xlabel('Jours', fontsize=12)
+    ax.set_ylabel('Prix', fontsize=12)
+    ax.legend()
+    ax.grid(True)
+
+def plot_all_volatility(ax, igou_vol_paths, bns_vol_paths):
+    """Tracer les trajectoires de volatilité pour les modèles avec volatilité stochastique.
+    
+    Args:
+        ax: Axe matplotlib pour le tracé
+        igou_vol_paths: Trajectoires de volatilité du modèle IG-OU
+        bns_vol_paths: Trajectoires de volatilité du modèle BNS
+    """
+    # Conversion en tableaux numpy
+    igou_vol_paths = np.array(igou_vol_paths)
+    bns_vol_paths = np.array(bns_vol_paths)
+    
+    # Calcul des statistiques pour IG-OU
+    mean_igou_vol = np.mean(igou_vol_paths, axis=0)
+    p05_igou_vol = np.percentile(igou_vol_paths, 5, axis=0)
+    p95_igou_vol = np.percentile(igou_vol_paths, 95, axis=0)
+    
+    # Calcul des statistiques pour BNS
+    mean_bns_vol = np.mean(bns_vol_paths, axis=0)
+    p05_bns_vol = np.percentile(bns_vol_paths, 5, axis=0)
+    p95_bns_vol = np.percentile(bns_vol_paths, 95, axis=0)
+    
+    # Tracer IG-OU
+    ax.plot(mean_igou_vol, color='blue', label='IG-OU (Moyenne)')
+    ax.fill_between(range(len(mean_igou_vol)), p05_igou_vol, p95_igou_vol, color='blue', alpha=0.1, label='IG-OU (90% IC)')
+    
+    # Tracer BNS
+    ax.plot(mean_bns_vol, color='red', linestyle='-.', label='BNS (Moyenne)')
+    ax.fill_between(range(len(mean_bns_vol)), p05_bns_vol, p95_bns_vol, color='red', alpha=0.1, label='BNS (90% IC)')
+    
+    # Personnalisation du graphique
+    ax.set_title('Volatilité des modèles IG-OU et BNS', fontsize=14)
+    ax.set_xlabel('Jours', fontsize=12)
+    ax.set_ylabel('Volatilité', fontsize=12)
+    ax.legend()
+    ax.grid(True)
 
 if __name__ == "__main__":
     main()

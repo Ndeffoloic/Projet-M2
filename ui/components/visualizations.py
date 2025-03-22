@@ -115,14 +115,15 @@ class VolatilityPlotter:
         plt.close(fig)
 
     @staticmethod
-    def plot_diagnostics(returns, model_returns, vol_series):
+    def plot_diagnostics(returns, model_returns, vol_series, model_name="BNS"):
         """
-        Génère des graphiques de diagnostic pour le modèle BNS
+        Génère des graphiques de diagnostic pour le modèle 
         
         Args:
             returns: Série temporelle des rendements réels
             model_returns: Série temporelle des rendements simulés par le modèle
             vol_series: Série temporelle de la volatilité simulée
+            model_name: Nom du modèle à afficher dans les titres (défaut: "BNS")
         
         Returns:
             matplotlib.figure.Figure: Figure avec les graphiques de diagnostic
@@ -155,7 +156,7 @@ class VolatilityPlotter:
                 bins = np.linspace(min_val, max_val, min(30, len(model_returns)))
                 
                 axes[0, 0].hist(returns, bins=bins, alpha=0.5, label='Données réelles', density=True)
-                axes[0, 0].hist(model_returns, bins=bins, alpha=0.5, label='Modèle BNS', density=True)
+                axes[0, 0].hist(model_returns, bins=bins, alpha=0.5, label=f'Modèle {model_name}', density=True)
                 axes[0, 0].set_title('Distribution des rendements')
                 axes[0, 0].legend()
             except Exception as e:
@@ -192,7 +193,7 @@ class VolatilityPlotter:
                 # Limiter les valeurs extrêmes pour l'affichage
                 vol_for_plot = np.clip(vol_series.values, 0, 2)
                 axes[1, 0].plot(vol_for_plot)
-                axes[1, 0].set_title('Volatilité simulée (BNS)')
+                axes[1, 0].set_title(f'Volatilité simulée ({model_name})')
                 axes[1, 0].set_xlabel('Temps')
                 axes[1, 0].set_ylabel('Volatilité')
             except Exception as e:
@@ -210,7 +211,7 @@ class VolatilityPlotter:
                 # Limiter les valeurs extrêmes pour l'ACF
                 returns_squared = np.clip(model_returns**2, 0, 25)
                 plot_acf(returns_squared, lags=min(20, len(model_returns) // 2), ax=axes[1, 1])
-                axes[1, 1].set_title('Autocorrélation des rendements au carré (BNS)')
+                axes[1, 1].set_title(f'Autocorrélation des rendements au carré ({model_name})')
             except Exception as e:
                 axes[1, 1].text(0.5, 0.5, f"Erreur lors du calcul de l'autocorrélation: {str(e)}", 
                             ha='center', va='center', transform=axes[1, 1].transAxes)
