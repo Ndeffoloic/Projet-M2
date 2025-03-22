@@ -8,11 +8,15 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
-from scipy.stats import norm
+from scipy.stats import (norm, invgauss, shapiro, jarque_bera)
 from sklearn.metrics import (mean_absolute_error,
                              mean_absolute_percentage_error,
                              mean_squared_error)
+import seaborn as sns
+import statsmodels.api as sm
 
+# Importer les fonctions nécessaires
+from scipy.stats import invgauss
 
 def generate_ig(a, b, size):
     """Génère des variables aléatoires Inverse Gaussiennes (Algorithme du document)"""
@@ -64,6 +68,26 @@ def simulate_bs(S0, mu, sigma, days=30):
         shock = sigma * np.sqrt(dt) * np.random.normal()
         prices.append(prices[-1] * np.exp(drift + shock))
     return np.array(prices)
+
+def simulate_bns(S0, lambda_, a, b, theta, T=30, dt=1/252):
+    """Simule le modèle Barndorff-Nielsen & Shephard"""
+    n_steps = int(T/dt)
+    X = np.zeros(n_steps)
+    prices = np.zeros(n_steps)
+    X[0] = S0
+    prices[0] = S0
+    
+    for t in range(1, n_steps):
+        # Processus de volatilité
+        dL = generate_ig(a*dt, b, 1)[0]
+        X[t] = X[t-1] * np.exp(-lambda_*dt) + dL
+        
+        # Processus de prix
+        drift = (theta - 0.5 * X[t]) * dt
+        shock = np.sqrt(X[t]) * np.sqrt(dt) * np.random.normal()
+        prices[t] = prices[t-1] * np.exp(drift + shock)
+    
+    return prices[:T]
 
 def estimate_parameters(returns):
     """Estime μ, σ² et λ selon les formules du document (Section 3)"""
@@ -140,6 +164,7 @@ def perform_backtesting(data, test_percentage=0.3, n_simulations=100):
     
     # Initialize arrays for predictions
     igou_paths = np.zeros((n_simulations, n_test))
+    bns_paths = np.zeros((n_simulations, n_test))
     
     # Run IG-OU model simulations
     for i in range(n_simulations):
@@ -160,6 +185,16 @@ def perform_backtesting(data, test_percentage=0.3, n_simulations=100):
             # Fill with the last successful simulation or with zeros
             igou_paths[i] = igou_paths[max(0, i-1)] if i > 0 else np.zeros(n_test)
     
+    # Run BNS model simulations
+    for i in range(n_simulations):
+        try:
+            bns_prices = simulate_bns(last_price, lambda_, a=2.2395e-7, b=1.0, theta=0.1, T=n_test)
+            bns_paths[i] = bns_prices
+        except Exception as e:
+            st.error(f"Error in BNS simulation {i+1}: {str(e)}")
+            # Fill with the last successful simulation or with zeros
+            bns_paths[i] = bns_paths[max(0, i-1)] if i > 0 else np.zeros(n_test)
+    
     # Calculate mean prediction for IG-OU model
     igou_mean_prediction = np.mean(igou_paths, axis=0)
     
@@ -177,17 +212,21 @@ def perform_backtesting(data, test_percentage=0.3, n_simulations=100):
         filtered_actual = actual_prices[valid_indices]
         filtered_igou = igou_mean_prediction[valid_indices]
         filtered_bs = bs_prediction[valid_indices]
+        filtered_bns = np.mean(bns_paths, axis=0)[valid_indices]
         
         # Calculate metrics
         igou_rmse = sqrt(mean_squared_error(filtered_actual, filtered_igou))
         bs_rmse = sqrt(mean_squared_error(filtered_actual, filtered_bs))
+        bns_rmse = sqrt(mean_squared_error(filtered_actual, filtered_bns))
         
         igou_mae = mean_absolute_error(filtered_actual, filtered_igou)
         bs_mae = mean_absolute_error(filtered_actual, filtered_bs)
+        bns_mae = mean_absolute_error(filtered_actual, filtered_bns)
         
         # Mean Absolute Percentage Error (MAPE)
         igou_mape = mean_absolute_percentage_error(filtered_actual, filtered_igou) * 100
         bs_mape = mean_absolute_percentage_error(filtered_actual, filtered_bs) * 100
+        bns_mape = mean_absolute_percentage_error(filtered_actual, filtered_bns) * 100
         
         # Direction accuracy (percentage of correct directional predictions)
         def direction_accuracy(actual, predicted):
@@ -199,21 +238,27 @@ def perform_backtesting(data, test_percentage=0.3, n_simulations=100):
         
         igou_dir_acc = direction_accuracy(filtered_actual, filtered_igou)
         bs_dir_acc = direction_accuracy(filtered_actual, filtered_bs)
+        bns_dir_acc = direction_accuracy(filtered_actual, filtered_bns)
         
         # Prepare results
         results = {
             'actual_prices': actual_prices,
             'igou_prediction': igou_mean_prediction,
             'bs_prediction': bs_prediction,
+            'bns_prediction': np.mean(bns_paths, axis=0),
             'metrics': {
                 'igou_rmse': igou_rmse,
                 'bs_rmse': bs_rmse,
+                'bns_rmse': bns_rmse,
                 'igou_mae': igou_mae,
                 'bs_mae': bs_mae,
+                'bns_mae': bns_mae,
                 'igou_mape': igou_mape,
                 'bs_mape': bs_mape,
+                'bns_mape': bns_mape,
                 'igou_dir_acc': igou_dir_acc,
-                'bs_dir_acc': bs_dir_acc
+                'bs_dir_acc': bs_dir_acc,
+                'bns_dir_acc': bns_dir_acc
             }
         }
         
@@ -245,6 +290,9 @@ def plot_backtesting_results(results, n_test):
     
     # Plot Black-Scholes prediction
     ax.plot(x_axis, results['bs_prediction'][:actual_len], 'b-.', lw=2, label='Black-Scholes Prediction')
+    
+    # Plot BNS prediction
+    ax.plot(x_axis, results['bns_prediction'][:actual_len], 'g:', lw=2, label='BNS Prediction')
     
     ax.set_title('Backtesting Results: Prediction vs Actual Prices')
     ax.set_xlabel('Days')
@@ -303,18 +351,22 @@ def add_backtesting_section(data):
         'Black-Scholes Model': [results['metrics']['bs_rmse'], 
                                results['metrics']['bs_mae'], 
                                results['metrics']['bs_mape'],
-                               results['metrics']['bs_dir_acc']]
+                               results['metrics']['bs_dir_acc']],
+        'BNS Model': [results['metrics']['bns_rmse'], 
+                      results['metrics']['bns_mae'], 
+                      results['metrics']['bns_mape'],
+                      results['metrics']['bns_dir_acc']]
     })
     
     # Format columns with float values
-    for col in ['IG-OU Model', 'Black-Scholes Model']:
+    for col in ['IG-OU Model', 'Black-Scholes Model', 'BNS Model']:
         metrics_df[col] = metrics_df[col].apply(lambda x: f"{x:.4f}")
     
     st.table(metrics_df)
     
     # Determine the best model based on RMSE
-    best_rmse = min(results['metrics']['igou_rmse'], results['metrics']['bs_rmse'])
-    best_model = "IG-OU" if results['metrics']['igou_rmse'] == best_rmse else "Black-Scholes"
+    best_rmse = min(results['metrics']['igou_rmse'], results['metrics']['bs_rmse'], results['metrics']['bns_rmse'])
+    best_model = "IG-OU" if results['metrics']['igou_rmse'] == best_rmse else "Black-Scholes" if results['metrics']['bs_rmse'] == best_rmse else "BNS"
     
     st.success(f"Based on RMSE, the {best_model} model performed better for this time period.")
     
@@ -349,10 +401,121 @@ def add_backtesting_section(data):
             'Actual Price': results['actual_prices'],
             'IG-OU Prediction': results['igou_prediction'],
             'Black-Scholes Prediction': results['bs_prediction'],
+            'BNS Prediction': results['bns_prediction'],
             'IG-OU Error (%)': ((results['igou_prediction'] - results['actual_prices']) / results['actual_prices'] * 100),
-            'BS Error (%)': ((results['bs_prediction'] - results['actual_prices']) / results['actual_prices'] * 100)
+            'BS Error (%)': ((results['bs_prediction'] - results['actual_prices']) / results['actual_prices'] * 100),
+            'BNS Error (%)': ((results['bns_prediction'] - results['actual_prices']) / results['actual_prices'] * 100)
         })
         st.dataframe(prediction_df)
+
+class VolatilityPlotter:
+    @staticmethod
+    def plot_acf(series, title):
+        """Autocorrelation Function plot"""
+        plt.figure(figsize=(12,6))
+        pd.plotting.autocorrelation_plot(series)
+        plt.title(title)
+        return plt.gcf()
+
+    @staticmethod
+    def plot_pdf_comparison(data, inv_gaussian_params, title):
+        """Compare empirical PDF with Inverse Gaussian"""
+        plt.figure(figsize=(12,6))
+        sns.histplot(data, kde=True, stat='density')
+        x = np.linspace(min(data), max(data), 100)
+        plt.plot(x, invgauss.pdf(x, *inv_gaussian_params), 'r-')
+        plt.title(title)
+        return plt.gcf()
+
+    @staticmethod
+    def plot_residual_analysis(residuals, title):
+        """ACF and histogram of squared residuals"""
+        fig, ax = plt.subplots(2,1, figsize=(12,12))
+        
+        # ACF des résidus carrés
+        sm.graphics.tsa.plot_acf(residuals**2, ax=ax[0])
+        ax[0].set_title(f'ACF des résidus carrés - {title}')
+        
+        # Histogramme
+        sns.histplot(residuals, kde=True, ax=ax[1])
+        ax[1].set_title(f'Distribution des résidus - {title}')
+        
+        return fig
+
+    @staticmethod
+    def plot_confidence_intervals(actual, predictions, title):
+        """Visualize model confidence intervals"""
+        plt.figure(figsize=(12,6))
+        plt.plot(actual, 'b-', label='Actual Prices')
+        plt.plot(np.mean(predictions, axis=0), 'r--', label='Mean Prediction')
+        plt.fill_between(range(len(actual)),
+                        np.percentile(predictions, 5, axis=0),
+                        np.percentile(predictions, 95, axis=0),
+                        color='red', alpha=0.2, label='90% Confidence Band')
+        plt.title(title)
+        plt.legend()
+        return plt.gcf()
+
+def calculate_model_metrics(actual, predicted):
+    """Calculate comprehensive model diagnostics"""
+    residuals = actual - predicted
+    return {
+        'shapiro_stat': shapiro(residuals)[0],
+        'shapiro_p': shapiro(residuals)[1],
+        'arch_lm_stat': arch_lm_test(residuals)[0],
+        'arch_lm_p': arch_lm_test(residuals)[1],
+        'jb_stat': jarque_bera(residuals)[0],
+        'jb_p': jarque_bera(residuals)[1]
+    }
+
+def arch_lm_test(residuals, lags=5):
+    """ARCH-LM test for volatility clustering"""
+    return sm.stats.diagnostic.het_arch(residuals, maxlag=lags)
+
+def add_diagnostic_section(data):
+    """New section for model diagnostics"""
+    st.header("Analyse Diagnostique")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        selected_model = st.selectbox("Modèle", ["IG-OU", "Black-Scholes", "BNS"])
+        
+    with col2:
+        plot_type = st.selectbox("Type de visualisation",
+                               ["ACF des prix", 
+                                "PDF des rendements",
+                                "Intervalles de confiance",
+                                "Analyse des résidus"])
+    
+    if selected_model == "IG-OU":
+        model_data = data['Price']
+    elif selected_model == "Black-Scholes":
+        model_data = simulate_bs(data['Price'].iloc[-1], 0.05, 0.2)
+    else:
+        model_data = simulate_bns(data['Price'].iloc[-1], 0.1, 2.2395e-7, 1.0, 0.1)
+    
+    if plot_type == "ACF des prix":
+        fig = VolatilityPlotter.plot_acf(model_data, f"ACF - {selected_model}")
+    elif plot_type == "PDF des rendements":
+        returns = pd.Series(model_data).pct_change().dropna()
+        fig = VolatilityPlotter.plot_pdf_comparison(returns, (0, returns.std()), "PDF des Rendements")
+    elif plot_type == "Intervalles de confiance":
+        fig = VolatilityPlotter.plot_confidence_intervals(data['Price'].values[-30:], 
+                                                         np.array([model_data]*100), 
+                                                         "Intervalles de Confiance")
+    else:
+        residuals = data['Price'].values[-len(model_data):] - model_data
+        fig = VolatilityPlotter.plot_residual_analysis(residuals, selected_model)
+    
+    st.pyplot(fig)
+    
+    if st.button("Exécuter les tests statistiques"):
+        metrics = calculate_model_metrics(data['Price'].values[-len(model_data):], model_data)
+        st.subheader("Résultats des tests")
+        st.write(f"Shapiro-Wilk (Normalité): W={metrics['shapiro_stat']:.3f}, p={metrics['shapiro_p']:.4f}")
+        st.write(f"ARCH-LM (Clustering de volatilité): LM={metrics['arch_lm_stat']:.2f}, p={metrics['arch_lm_p']:.4f}")
+        st.write(f"Jarque-Bera (Normalité): JB={metrics['jb_stat']:.2f}, p={metrics['jb_p']:.4f}")
 
 def main():
     st.title("Prédiction de Prix et Volatilité")
@@ -500,10 +663,12 @@ def main():
         st.sidebar.header("Modèles de prédiction")
         use_igou = st.sidebar.checkbox("Modèle IG-OU", value=True)
         use_bs = st.sidebar.checkbox("Modèle Black-Scholes", value=True)
+        use_bns = st.sidebar.checkbox("Modèle BNS", value=True)
         
         # Simulation de la volatilité et des prix
         vol_paths = np.zeros((n_simulations, 30))
         price_paths = np.zeros((n_simulations, 30))
+        bns_price_paths = np.zeros((n_simulations, 30))
         
         # Vérifier que l'accès à la dernière valeur est sûr
         if data['Price'].dropna().shape[0] > 0:
@@ -547,11 +712,53 @@ def main():
             else:
                 bs_prices = None
             
+            # Simulation BNS
+            if use_bns:
+                bns_prices = simulate_bns(last_price, lambda_, a=a, b=b, theta=0.1, T=30)
+                for i in range(n_simulations):
+                    bns_price_paths[i] = bns_prices
+            else:
+                bns_prices = None
+            
             # Visualisation
             st.subheader("Résultats de simulation")
             
             # Configuration des graphiques selon les modèles sélectionnés
-            if use_igou and use_bs:
+            if use_igou and use_bs and use_bns:
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+                
+                # Graphique de prix combiné
+                if not historical_prices.empty:
+                    # Si nous avons des données historiques, les afficher
+                    dates = pd.date_range(end=datetime.now(), periods=len(historical_prices))
+                    ax1.plot(dates, historical_prices, 'b-', lw=2, label='Données historiques')
+                
+                # Simulation IG-OU
+                for path in price_paths:
+                    ax1.plot(range(30), path, lw=1, alpha=0.1, color='red')
+                mean_price = np.mean(price_paths, axis=0)
+                ax1.plot(range(30), mean_price, 'r--', lw=2, label='Prédiction IG-OU (Moyenne)')
+                
+                # Simulation Black-Scholes
+                ax1.plot(range(30), bs_prices, 'orange', lw=2, label='Prédiction Black-Scholes')
+                
+                # Simulation BNS
+                ax1.plot(range(30), bns_prices, 'green', lw=2, label='Prédiction BNS')
+                
+                ax1.set_title('Comparaison des modèles sur 30 jours')
+                ax1.legend()
+                ax1.grid(True)
+                
+                # Graphique de volatilité
+                for path in vol_paths:
+                    ax2.plot(path, lw=1, alpha=0.1, color='green')
+                mean_vol = np.mean(vol_paths, axis=0)
+                ax2.plot(mean_vol, lw=2, color='green', label='Volatilité moyenne')
+                ax2.set_title('Projection de la volatilité sur 30 jours (IG-OU)')
+                ax2.legend()
+                ax2.grid(True)
+                
+            elif use_igou and use_bs:
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
                 
                 # Graphique de prix combiné
@@ -582,6 +789,56 @@ def main():
                 ax2.legend()
                 ax2.grid(True)
                 
+            elif use_igou and use_bns:
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+                
+                # Graphique de prix combiné
+                if not historical_prices.empty:
+                    # Si nous avons des données historiques, les afficher
+                    dates = pd.date_range(end=datetime.now(), periods=len(historical_prices))
+                    ax1.plot(dates, historical_prices, 'b-', lw=2, label='Données historiques')
+                
+                # Simulation IG-OU
+                for path in price_paths:
+                    ax1.plot(range(30), path, lw=1, alpha=0.1, color='red')
+                mean_price = np.mean(price_paths, axis=0)
+                ax1.plot(range(30), mean_price, 'r--', lw=2, label='Prédiction IG-OU (Moyenne)')
+                
+                # Simulation BNS
+                ax1.plot(range(30), bns_prices, 'green', lw=2, label='Prédiction BNS')
+                
+                ax1.set_title('Comparaison des modèles sur 30 jours')
+                ax1.legend()
+                ax1.grid(True)
+                
+                # Graphique de volatilité
+                for path in vol_paths:
+                    ax2.plot(path, lw=1, alpha=0.1, color='green')
+                mean_vol = np.mean(vol_paths, axis=0)
+                ax2.plot(mean_vol, lw=2, color='green', label='Volatilité moyenne')
+                ax2.set_title('Projection de la volatilité sur 30 jours (IG-OU)')
+                ax2.legend()
+                ax2.grid(True)
+                
+            elif use_bs and use_bns:
+                fig, ax = plt.subplots(figsize=(12, 8))
+                
+                # Graphique de prix combiné
+                if not historical_prices.empty:
+                    # Si nous avons des données historiques, les afficher
+                    dates = pd.date_range(end=datetime.now(), periods=len(historical_prices))
+                    ax.plot(dates, historical_prices, 'b-', lw=2, label='Données historiques')
+                
+                # Simulation Black-Scholes
+                ax.plot(range(30), bs_prices, 'orange', lw=2, label='Prédiction Black-Scholes')
+                
+                # Simulation BNS
+                ax.plot(range(30), bns_prices, 'green', lw=2, label='Prédiction BNS')
+                
+                ax.set_title('Comparaison des modèles sur 30 jours')
+                ax.legend()
+                ax.grid(True)
+                
             elif use_igou:
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
                 
@@ -609,6 +866,13 @@ def main():
                 ax.set_title('Projection des prix sur 30 jours (Black-Scholes)')
                 ax.legend()
                 ax.grid(True)
+                
+            elif use_bns:
+                fig, ax = plt.subplots(figsize=(12, 8))
+                ax.plot(bns_prices, 'green', lw=2, label='Prédiction BNS')
+                ax.set_title('Projection des prix sur 30 jours (BNS)')
+                ax.legend()
+                ax.grid(True)
             else:
                 st.warning("Aucun modèle sélectionné pour la simulation")
                 fig = None
@@ -631,6 +895,9 @@ def main():
             if use_bs:
                 forecast_data['Prix (Black-Scholes)'] = bs_prices
             
+            if use_bns:
+                forecast_data['Prix (BNS)'] = bns_prices
+            
             forecast_df = pd.DataFrame(forecast_data)
             st.dataframe(forecast_df)
             
@@ -652,9 +919,17 @@ def main():
                 Le modèle Black-Scholes est un modèle classique en finance qui suppose que les prix des actifs suivent un mouvement 
                 brownien géométrique avec volatilité constante. Il repose sur l'hypothèse que les marchés sont efficaces et 
                 que les rendements sont normalement distribués.
+                
+                ### Modèle BNS
+                Le modèle BNS (Barndorff-Nielsen & Shephard) est un modèle de volatilité stochastique qui utilise la distribution 
+                Inverse Gaussienne pour modéliser la volatilité. Il est similaire au modèle IG-OU mais utilise une approche différente 
+                pour modéliser la volatilité.
                 """)
         else:
             st.error("Données insuffisantes pour la simulation")
+    
+    # Add diagnostic section
+    add_diagnostic_section(data)
 
 if __name__ == "__main__":
     # Configuration de la page
