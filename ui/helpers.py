@@ -1,7 +1,10 @@
-import streamlit as st
-import pandas as pd
+from typing import List, Optional, Tuple, Union
+
+import matplotlib as plt
 import numpy as np
-from typing import Tuple, Optional, List, Union
+import pandas as pd
+import streamlit as st
+
 
 def display_error(message: str) -> None:
     """Affiche un message d'erreur"""
@@ -167,3 +170,38 @@ def show_statistics(price_paths: List[List[float]], vol_paths: List[List[float]]
             'Metric': list(vol_stats.keys()),
             'Value': [f"{v:.4f}" for v in vol_stats.values()]
         }).set_index('Metric'))
+        
+    def plot_diagnostics(returns: pd.Series, model_returns: pd.Series, vol_series: pd.Series):
+        """Generate all diagnostic plots from the paper."""
+        fig = plt.figure(figsize=(15, 20))
+        
+        # Autocorrelation plots
+        ax1 = plt.subplot(321)
+        plot_acf(returns, ax=ax1, title="Autocorrelation of Returns")
+        
+        ax2 = plt.subplot(322)
+        plot_acf(vol_series, ax=ax2, title="Autocorrelation of Volatility")
+        
+        # PDF comparison
+        ax3 = plt.subplot(323)
+        sns.kdeplot(returns, ax=ax3, label="Empirical")
+        x = np.linspace(returns.min(), returns.max(), 100)
+        ax3.plot(x, invgauss.pdf(x, *inv_parameters), label="Inv Gaussian")
+        ax3.set_title("Return Distribution vs IG")
+        
+        # Residual analysis
+        ax4 = plt.subplot(324)
+        residuals = returns - model_returns
+        plot_acf(residuals**2, ax=ax4, title="ACF of Squared Residuals")
+        
+        # QQ Plot
+        ax5 = plt.subplot(325)
+        sm.qqplot(residuals, line='s', ax=ax5)
+        ax5.set_title("QQ Plot vs Normal Distribution")
+        
+        # Volatility path
+        ax6 = plt.subplot(326)
+        vol_series.plot(ax=ax6, title="Simulated Volatility Path")
+        
+        plt.tight_layout()
+        return fig

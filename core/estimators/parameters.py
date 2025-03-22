@@ -1,11 +1,32 @@
 """Parameter estimation module for financial models."""
+from typing import Tuple, Union
+
 import numpy as np
 import pandas as pd
-from typing import Tuple, Union
+
 
 class ParameterEstimator:
     """Parameter estimation for IG-OU and Black-Scholes models."""
     
+    @staticmethod
+    def estimate_ig_ab(vol_series: pd.Series, lambda_: float, dt: float = 1.0) -> Tuple[float, float]:
+        """Estimate IG parameters using equation 3.16 from paper."""
+        Y = []
+        for k in range(1, len(vol_series)):
+            Y_k = vol_series.iloc[k] - np.exp(-lambda_ * dt) * vol_series.iloc[k-1]
+            Y.append(Y_k)
+        
+        Y_mean = np.mean(Y)
+        Y_var = np.var(Y)
+        
+        h = dt
+        numerator = Y_var * (np.exp(2 * lambda_ * h) - 1)
+        denominator = (np.exp(lambda_ * h) - 1)**3
+        b_hat = np.sqrt(numerator / denominator)
+        a_hat = Y_mean * b_hat / (np.exp(lambda_ * h) - 1)
+        
+        return float(a_hat), float(b_hat)
+
     @staticmethod
     def estimate_igou_parameters(returns: Union[pd.DataFrame, pd.Series]) -> Tuple[float, float, float]:
         """Estimate parameters for the IG-OU model using method of moments.
