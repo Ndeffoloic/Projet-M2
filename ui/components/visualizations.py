@@ -114,6 +114,74 @@ class VolatilityPlotter:
         st.pyplot(fig)
         plt.close(fig)
 
+    @staticmethod
+    def plot_diagnostics(returns, model_returns, vol_series):
+        """
+        Génère des graphiques de diagnostic pour le modèle BNS
+        
+        Args:
+            returns: Série temporelle des rendements réels
+            model_returns: Série temporelle des rendements simulés par le modèle
+            vol_series: Série temporelle de la volatilité simulée
+        
+        Returns:
+            matplotlib.figure.Figure: Figure avec les graphiques de diagnostic
+        """
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        
+        # Vérification que nous avons assez de données
+        min_data_length = 2  # Minimum requis pour l'autocorrélation
+        has_enough_data = len(model_returns) > min_data_length
+        
+        # Graphique 1: Comparaison des distributions de rendements
+        if len(returns) > 0 and len(model_returns) > 0:
+            axes[0, 0].hist(returns, bins=min(30, len(returns)), alpha=0.5, label='Données réelles', density=True)
+            axes[0, 0].hist(model_returns, bins=min(30, len(model_returns)), alpha=0.5, label='Modèle BNS', density=True)
+            axes[0, 0].set_title('Distribution des rendements')
+            axes[0, 0].legend()
+        else:
+            axes[0, 0].text(0.5, 0.5, "Données insuffisantes pour l'histogramme", 
+                        ha='center', va='center', transform=axes[0, 0].transAxes)
+        axes[0, 0].grid(True)
+        
+        # Graphique 2: Q-Q Plot
+        if len(returns) > min_data_length:
+            from scipy import stats
+            stats.probplot(returns, dist="norm", plot=axes[0, 1])
+            axes[0, 1].set_title('Q-Q Plot (Normalité des rendements réels)')
+        else:
+            axes[0, 1].text(0.5, 0.5, "Données insuffisantes pour le Q-Q Plot", 
+                        ha='center', va='center', transform=axes[0, 1].transAxes)
+        axes[0, 1].grid(True)
+        
+        # Graphique 3: Volatilité au cours du temps
+        if len(vol_series) > 0:
+            axes[1, 0].plot(vol_series.values)
+            axes[1, 0].set_title('Volatilité simulée (BNS)')
+            axes[1, 0].set_xlabel('Temps')
+            axes[1, 0].set_ylabel('Volatilité')
+        else:
+            axes[1, 0].text(0.5, 0.5, "Données de volatilité insuffisantes", 
+                        ha='center', va='center', transform=axes[1, 0].transAxes)
+        axes[1, 0].grid(True)
+        
+        # Graphique 4: Autocorrélation des rendements au carré
+        if has_enough_data and len(model_returns) >= 5:  # Au moins 5 points pour une ACF significative
+            try:
+                from statsmodels.graphics.tsaplots import plot_acf
+                plot_acf(model_returns**2, lags=min(20, len(model_returns) // 2), ax=axes[1, 1])
+                axes[1, 1].set_title('Autocorrélation des rendements au carré (BNS)')
+            except Exception as e:
+                axes[1, 1].text(0.5, 0.5, f"Erreur lors du calcul de l'autocorrélation: {str(e)}", 
+                            ha='center', va='center', transform=axes[1, 1].transAxes)
+        else:
+            axes[1, 1].text(0.5, 0.5, "Données insuffisantes pour l'autocorrélation\n(minimum 5 points nécessaires)", 
+                        ha='center', va='center', transform=axes[1, 1].transAxes)
+        axes[1, 1].grid(True)
+        
+        plt.tight_layout()
+        return fig
+
 def plot_predictions(ax, price_paths: List[List[float]], bs_prices: List[float]):
     """Plot price predictions for both models.
     

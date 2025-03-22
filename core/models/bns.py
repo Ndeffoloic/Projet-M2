@@ -2,7 +2,7 @@
 from typing import List, Tuple
 
 import numpy as np
-from ig_ou import IGOUModel
+from core.models.ig_ou import IGOUModel
 
 
 class BNSModel:

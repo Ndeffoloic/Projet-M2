@@ -32,16 +32,22 @@ class ParameterEstimator:
         """Estimate parameters for the IG-OU model using method of moments.
         
         Args:
-            returns: DataFrame or Series of asset returns. If DataFrame, assumes 'Close' column
+            returns: DataFrame or Series of asset returns. If DataFrame, assumes 'Close' or 'Price' column
             
         Returns:
             tuple: (mu, sigma_sq, lambda_) parameters for drift, volatility variance, and mean reversion
         """
         # Convert DataFrame to Series if needed
         if isinstance(returns, pd.DataFrame):
-            if 'Close' not in returns.columns:
-                raise ValueError("DataFrame must contain a 'Close' column")
-            returns = returns['Close'].pct_change().dropna()
+            # Cherche 'Close' ou 'Price' dans les colonnes
+            if 'Close' in returns.columns:
+                price_col = 'Close'
+            elif 'Price' in returns.columns:
+                price_col = 'Price'
+            else:
+                raise ValueError("DataFrame must contain either a 'Close' or 'Price' column")
+            
+            returns = returns[price_col].pct_change().dropna()
         elif isinstance(returns, pd.Series):
             returns = returns.pct_change().dropna()
         
@@ -76,16 +82,22 @@ class ParameterEstimator:
         """Estimate parameters for the Black-Scholes model.
         
         Args:
-            returns: DataFrame or Series of asset returns. If DataFrame, assumes 'Close' column
+            returns: DataFrame or Series of asset returns. If DataFrame, assumes 'Close' or 'Price' column
             
         Returns:
             tuple: (mu, sigma) parameters for drift and volatility
         """
         # Convert DataFrame to Series if needed
         if isinstance(returns, pd.DataFrame):
-            if 'Close' not in returns.columns:
-                raise ValueError("DataFrame must contain a 'Close' column")
-            returns = returns['Close'].pct_change().dropna()
+            # Cherche 'Close' ou 'Price' dans les colonnes
+            if 'Close' in returns.columns:
+                price_col = 'Close'
+            elif 'Price' in returns.columns:
+                price_col = 'Price'
+            else:
+                raise ValueError("DataFrame must contain either a 'Close' or 'Price' column")
+            
+            returns = returns[price_col].pct_change().dropna()
         elif isinstance(returns, pd.Series):
             returns = returns.pct_change().dropna()
         

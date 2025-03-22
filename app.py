@@ -10,7 +10,7 @@ from core.models.black_scholes import BlackScholesModel
 from core.models.bns import BNSModel
 from core.models.ig_ou import IGOUModel
 from ui.components.sidebar import render_sidebar
-from ui.components.visualizations import plot_predictions, plot_volatility
+from ui.components.visualizations import plot_predictions, plot_volatility, VolatilityPlotter
 from ui.helpers import show_statistics
 
 
@@ -38,14 +38,25 @@ def main():
     
     # Convert price series to DataFrame with 'Close' column
     if config["timeframe"] in ["minute", "hour"] or config['asset'] == "GLE.PA":
-        price_df = pd.DataFrame({'Close': price_series})
+        # Vérifier si price_series est scalaire ou itérable
+        if np.isscalar(price_series) or isinstance(price_series, (int, float)):
+            price_df = pd.DataFrame({'Close': [price_series]}, index=[pd.Timestamp.now()])
+        else:
+            price_df = pd.DataFrame({'Close': price_series})
     else:
-        price_df = pd.DataFrame({'Price': price_series})
+        # Même chose pour l'autre branche
+        if np.isscalar(price_series) or isinstance(price_series, (int, float)):
+            price_df = pd.DataFrame({'Price': [price_series]}, index=[pd.Timestamp.now()])
+        else:
+            price_df = pd.DataFrame({'Price': price_series})
     
     # Estimate parameters
     mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(price_df)
     bs_mu, bs_sigma = ParameterEstimator.estimate_bs_parameters(price_df)
-    a, b = ParameterEstimator.estimate_ig_ab(price_df['Close'], lambda_)
+    
+    # Déterminer quelle colonne de prix est disponible
+    price_col = 'Close' if 'Close' in price_df.columns else 'Price'
+    a, b = ParameterEstimator.estimate_ig_ab(price_df[price_col], lambda_)
     
     # Initialize models
     igou_model = IGOUModel(lambda_=lambda_, a=a, b=b)
@@ -63,7 +74,7 @@ def main():
             bns_prices, bns_vol = bns_model.simulate(last_price)
             
             # Diagnostic plots for BNS model
-            st.pyplot(plot_diagnostics(
+            st.pyplot(VolatilityPlotter.plot_diagnostics(
                 returns=price_series.pct_change().dropna(),
                 model_returns=pd.Series(bns_prices).pct_change().dropna(),
                 vol_series=pd.Series(bns_vol)

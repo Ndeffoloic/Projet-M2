@@ -7,15 +7,15 @@ import streamlit as st
 VALID_ASSETS = ["BTC-USD", "GLE.PA", "NVIDIA"]
 VALID_TIMEFRAMES = ["minute", "hour", "day", "week", "month"]
 
-def load_asset_data(asset: str, timeframe: str) -> pd.DataFrame:
+def load_asset_data(asset: str, timeframe: str) -> pd.Series:
     """Load data from predefined CSV files.
     
     Args:
-        asset (str): Asset name ("BTC-USD" or "GLE.PA")
+        asset (str): Asset name ("BTC-USD", "GLE.PA" or "NVIDIA")
         timeframe (str): Time frame ("minute", "hour", "day", "week", "month")
     
     Returns:
-        pd.DataFrame: DataFrame with Date index and Close prices
+        pd.Series: Series with Date index and Close/Price values
     """
     if asset not in VALID_ASSETS:
         st.error(f"Invalid asset. Please choose from: {VALID_ASSETS}")
@@ -61,33 +61,8 @@ def load_asset_data(asset: str, timeframe: str) -> pd.DataFrame:
             st.error("No valid numeric data found in price column")
             return None
             
-        # Return a DataFrame with Date index and the price column
-        result_df = pd.DataFrame({'Close': price_series}, index=price_series.index)
-        return result_df
-        
-        if 'Close' not in data.columns:
-            st.error(f"Column 'Close' missing in {file_path}")
-            return None
-            
-        # Clean the Close column:
-        # 1. Remove quotes
-        # 2. Remove commas (thousand separators)
-        # 3. Convert to float
-        close_series = (data['Close']
-                      .str.replace('"', '', regex=False)
-                      .str.replace(',', '', regex=False)
-                      .astype(float))
-        
-        # Remove any NaN values
-        close_series = close_series.dropna()
-        
-        if len(close_series) == 0:
-            st.error("No valid numeric data found in Close column")
-            return None
-            
-        # Retourner une DataFrame avec l'index Date et la colonne Close
-        result_df = pd.DataFrame({'Close': close_series}, index=close_series.index)
-        return result_df
+        # Return a Series with Date index (not a DataFrame)
+        return price_series
         
     except FileNotFoundError:
         st.error(f"File not found: {file_path}")
