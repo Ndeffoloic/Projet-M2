@@ -52,7 +52,7 @@ def simulate_ig_ou(X0, lambda_, a, b, T=30, dt=1/252):
         L = generate_ig(a*h, b, 1)[0]
         X[t] = np.exp(-lambda_*h)*X[t-1] + L
     
-    return X[:30]  # Assurons-nous de renvoyer exactement 30 valeurs
+    return X[:T]  # Retourner exactement T valeurs
 
 # Nouvelle fonction pour Black-Scholes
 def simulate_bs(S0, mu, sigma, days=30):
@@ -84,9 +84,7 @@ def estimate_parameters(returns):
             if pd.isna(rho1):
                 rho1 = 0.1  # Valeur par défaut
         except Exception:
-            rho1 = 0.1  # En cas d'erreur
-    else:
-        rho1 = 0.1
+            rho1 = 0.1
     
     # Éviter un lambda négatif ou zéro
     if rho1 >= 0.999:
@@ -99,13 +97,13 @@ def estimate_parameters(returns):
     return mu, sigma_sq, lambda_
 
 # Modified function to perform backtesting of prediction models
-def perform_backtesting(data, n_test=30, n_simulations=100):
+def perform_backtesting(data, test_percentage=0.3, n_simulations=100):
     """
-    Performs backtesting of prediction models by using historical data to predict the last n_test data points.
+    Performs backtesting of prediction models by using historical data to predict the last test_percentage of data points.
     
     Parameters:
-    data (pandas.DataFrame): DataFrame with 'Close' price column
-    n_test (int): Number of data points to use for testing (default: 30)
+    data (pandas.DataFrame): DataFrame with 'Price' price column
+    test_percentage (float): Percentage of data points to use for testing (default: 0.3 or 30%)
     n_simulations (int): Number of Monte Carlo simulations to run (default: 100)
     
     Returns:
@@ -116,7 +114,10 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
         data = data.sort_index()
     
     # Remove NaN values from the data before splitting
-    data = data.dropna(subset=['Close'])
+    data = data.dropna(subset=['Price'])
+    
+    # Calculate number of test data points based on percentage
+    n_test = int(len(data) * test_percentage)
     
     # Check if we have enough data after dropping NaNs
     if len(data) <= n_test:
@@ -128,13 +129,13 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
     test_data = data[-n_test:].copy()
     
     # Calculate returns for the training set
-    returns = train_data['Close'].pct_change(fill_method=None).dropna()
+    returns = train_data['Price'].pct_change(fill_method=None).dropna()
     
     # Estimate parameters from training data
     mu, sigma_sq, lambda_ = estimate_parameters(returns)
     
     # Get the last price from training data for initialization
-    last_price = train_data['Close'].iloc[-1]
+    last_price = train_data['Price'].iloc[-1]
     init_vol = max(min(returns.std(), 0.05), 0.001)
     
     # Initialize arrays for predictions
@@ -148,7 +149,7 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
             
             # Simulate prices with the simulated volatility
             prices = [last_price]
-            for t in range(n_test-1):
+            for t in range(n_test-1):  # Nous avons besoin de n_test-1 itérations car prices commence déjà avec last_price
                 drift = mu
                 shock = vol[t] * np.random.normal()
                 prices.append(prices[-1] * np.exp(drift + shock))
@@ -166,7 +167,7 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
     bs_prediction = simulate_bs(last_price, mu, returns.std(), days=n_test)
     
     # Get actual test values
-    actual_prices = test_data['Close'].values
+    actual_prices = test_data['Price'].values
     
     # Ensure there are no NaN values in any of the arrays
     valid_indices = ~np.isnan(actual_prices) & ~np.isnan(igou_mean_prediction) & ~np.isnan(bs_prediction)
@@ -222,24 +223,28 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
         return None
 
 # Function to visualize backtesting results
-def plot_backtesting_results(results, n_test=30):
+def plot_backtesting_results(results, n_test):
     """
     Plot the backtesting results.
     
     Parameters:
     results (dict): Dictionary with predictions and metrics
-    n_test (int): Number of test data points
+    n_test (int): Number of test data points (calculated from test_percentage)
     """
     fig, ax = plt.subplots(figsize=(12, 8))
     
+    # Vérifier la longueur réelle des données
+    actual_len = len(results['actual_prices'])
+    x_axis = range(actual_len)
+    
     # Plot actual prices
-    ax.plot(range(n_test), results['actual_prices'], 'k-', lw=2, label='Actual Prices')
+    ax.plot(x_axis, results['actual_prices'], 'k-', lw=2, label='Actual Prices')
     
     # Plot IG-OU prediction
-    ax.plot(range(n_test), results['igou_prediction'], 'r--', lw=2, label='IG-OU Prediction')
+    ax.plot(x_axis, results['igou_prediction'][:actual_len], 'r--', lw=2, label='IG-OU Prediction')
     
     # Plot Black-Scholes prediction
-    ax.plot(range(n_test), results['bs_prediction'], 'b-.', lw=2, label='Black-Scholes Prediction')
+    ax.plot(x_axis, results['bs_prediction'][:actual_len], 'b-.', lw=2, label='Black-Scholes Prediction')
     
     ax.set_title('Backtesting Results: Prediction vs Actual Prices')
     ax.set_xlabel('Days')
@@ -255,31 +260,31 @@ def add_backtesting_section(data):
     Add the backtesting section to the Streamlit app.
     
     Parameters:
-    data (pandas.DataFrame): DataFrame with 'Close' price column
+    data (pandas.DataFrame): DataFrame with 'Price' price column
     """
     st.header("Model Backtesting")
     
-    # Slider for number of test days
-    n_test = st.slider("Number of days to test", 10, 60, 30)
+    # Slider for test percentage
+    test_percentage = st.slider("Percentage of data to test", 10, 60, 30, step=5) / 100
     
     # Number of simulations for Monte Carlo
     n_simulations = st.number_input("Number of simulations", 10, 1000, 100)
     
     # Check if we have enough data
-    if len(data) <= n_test:
-        st.error(f"Not enough data for backtesting. Need more than {n_test} data points.")
+    if len(data) <= int(len(data) * test_percentage):
+        st.error(f"Not enough data for backtesting. Need more than {int(len(data) * test_percentage)} data points.")
         return
     
     # Run backtesting
     with st.spinner("Running backtesting..."):
-        results = perform_backtesting(data, n_test, n_simulations)
+        results = perform_backtesting(data, test_percentage, n_simulations)
     
     # Check if results is not None
     if results is None:
         return
     
     # Plot results
-    fig = plot_backtesting_results(results, n_test)
+    fig = plot_backtesting_results(results, n_test=int(len(data) * test_percentage))
     st.pyplot(fig)
     
     # Display metrics
@@ -340,7 +345,7 @@ def add_backtesting_section(data):
     # Show raw data
     with st.expander("Show Raw Prediction Data"):
         prediction_df = pd.DataFrame({
-            'Day': range(1, n_test + 1),
+            'Day': range(1, int(len(data) * test_percentage) + 1),
             'Actual Price': results['actual_prices'],
             'IG-OU Prediction': results['igou_prediction'],
             'Black-Scholes Prediction': results['bs_prediction'],
@@ -373,6 +378,7 @@ def main():
                         # Utiliser des proxies et multiple tentatives
                         for attempt in range(3):
                             try:
+                                # Utiliser des proxies et multiple tentatives
                                 data = yf.download(ticker, period=period, progress=False)
                                 if not data.empty and 'Price' in data.columns:
                                     break
@@ -519,7 +525,8 @@ def main():
                         vol = simulate_ig_ou(X0=init_vol,
                                             lambda_=max(lambda_, 0.001),
                                             a=a, 
-                                            b=b)
+                                            b=b, 
+                                            T=30)
                         
                         # Simulation des prix
                         prices = [last_price]
