@@ -10,14 +10,15 @@ from core.models.black_scholes import BlackScholesModel
 from core.models.bns import BNSModel
 from core.models.ig_ou import IGOUModel
 from ui.components.sidebar import render_sidebar
-from ui.components.visualizations import plot_predictions, plot_volatility, VolatilityPlotter
-from ui.helpers import show_statistics
+from ui.components.visualizations import (VolatilityPlotter, plot_predictions,
+                                          plot_volatility)
+from ui.helpers import calculate_descriptive_stats, show_statistics
 
 
 def main():
     """Main application entry point."""
     st.set_page_config(
-        page_title="Prédiction Prix & Volatilité",
+        page_title="Application des méthodes de l'article WCE2009 ",
         page_icon="📈",
         layout="wide"
     )
@@ -149,6 +150,43 @@ def main():
                 bns_acf = VolatilityPlotter.plot_residuals_acf(returns, bns_returns, "BNS")
                 st.pyplot(bns_acf)
                 
+            # Tableau comparatif des statistiques descriptives (Table 1)
+            st.header("Comparaison des statistiques descriptives (Table 1)")
+            
+            # Calculer les statistiques pour chaque série
+            actual_stats = calculate_descriptive_stats(returns, "Actual Returns")
+            bs_stats = calculate_descriptive_stats(pd.Series(bs_returns), "Black-Scholes")
+            igou_stats = calculate_descriptive_stats(pd.Series(igou_returns), "IG-OU")
+            bns_stats = calculate_descriptive_stats(pd.Series(bns_returns), "BNS")
+            
+            # Fusionner les dataframes
+            combined_stats = pd.concat([
+                actual_stats, 
+                bs_stats,
+                igou_stats,
+                bns_stats
+            ], axis=1)
+            
+            # Afficher le tableau avec mise en forme
+            st.dataframe(
+                combined_stats.style.format("{:.4f}")
+                .set_properties(**{'text-align': 'center'})
+                .set_table_styles([{
+                    'selector': 'th',
+                    'props': [('text-align', 'center')]
+                }]),
+                height=400
+            )
+            
+            # Explication des métriques
+            with st.expander("Explication des métriques"):
+                st.markdown("""
+                - **Sample Size** : Nombre d'observations
+                - **Range** : Différence entre les valeurs max/min
+                - **Coef. of Variation** : Ratio écart-type/moyenne (mesure de dispersion relative)
+                - **Excess Kurtosis** : Kurtosis - 3 (0 = distribution normale)
+                """)
+            
             # Graphique comparatif des ACF des résidus carrés
             st.header("Comparaison des ACF des résidus carrés")
             fig_acf_comp, ax_acf_comp = plt.subplots(figsize=(15, 8))

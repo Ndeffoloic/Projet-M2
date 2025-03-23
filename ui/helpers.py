@@ -205,3 +205,24 @@ def show_statistics(price_paths: List[List[float]], vol_paths: List[List[float]]
         
         plt.tight_layout()
         return fig
+
+def calculate_descriptive_stats(returns: pd.Series, title: str) -> pd.DataFrame:
+    """Calcule les statistiques descriptives selon la Table 1 de l'article."""
+    stats = {
+        'Sample Size': len(returns),
+        'Range': returns.max() - returns.min(),
+        'Mean': returns.mean(),
+        'Variance': returns.var(),
+        'Std. Deviation': returns.std(),
+        'Coef. of Variation': returns.std() / returns.mean() if returns.mean() != 0 else np.nan,
+        'Std. Error': returns.sem(),
+        'Skewness': returns.skew(),
+        'Excess Kurtosis': returns.kurtosis()  # Déjà normalisé à 0 pour une distribution normale
+    }
+    
+    df = pd.DataFrame({
+        'Statistic': stats.keys(),
+        title: stats.values()
+    })
+    
+    return df.set_index('Statistic')
