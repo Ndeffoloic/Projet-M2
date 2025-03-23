@@ -51,13 +51,9 @@ def main():
         else:
             price_df = pd.DataFrame({'Price': price_series})
     
-    # Estimate parameters
-    mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(price_df)
+    # Estimate parameters with improved method
+    mu, sigma_sq, lambda_, a, b = ParameterEstimator.estimate_igou_parameters(price_df)
     bs_mu, bs_sigma = ParameterEstimator.estimate_bs_parameters(price_df)
-    
-    # Déterminer quelle colonne de prix est disponible
-    price_col = 'Close' if 'Close' in price_df.columns else 'Price'
-    a, b = ParameterEstimator.estimate_ig_ab(price_df[price_col], lambda_)
     
     # Stocker les paramètres a et b dans la session state pour affichage dans la sidebar
     st.session_state['ig_param_a'] = a
@@ -66,7 +62,10 @@ def main():
     # Initialize models
     igou_model = IGOUModel(lambda_=lambda_, a=a, b=b)
     bs_model = BlackScholesModel(bs_mu, bs_sigma)
-    bns_model = BNSModel(igou_model, mu=mu, beta=0.5)  # Beta from paper
+    
+    # Initialiser le modèle BNS avec la nouvelle implémentation
+    # Utiliser un paramètre de levier (rho) négatif pour capturer l'effet de levier
+    bns_model = BNSModel(lambda_=lambda_, a=a, b=b, mu=mu, rho=-0.5)
     
     # Run simulations
     if st.button("Lancer la simulation"):
