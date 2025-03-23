@@ -123,16 +123,37 @@ def main():
                 st.header("Diagnostic du modèle Black-Scholes")
                 bs_diag = VolatilityPlotter.plot_diagnostics(returns, bs_returns, None, "Black-Scholes")
                 st.pyplot(bs_diag)
+                
+                # ACF des résidus carrés pour Black-Scholes
+                st.subheader("ACF des résidus carrés pour Black-Scholes")
+                bs_acf = VolatilityPlotter.plot_residuals_acf(returns, bs_returns, "Black-Scholes")
+                st.pyplot(bs_acf)
             
             if show_igou:
                 st.header("Diagnostic du modèle IG-OU")
                 igou_diag = VolatilityPlotter.plot_diagnostics(returns, igou_returns, igou_vol_paths, "IG-OU")
                 st.pyplot(igou_diag)
+                
+                # ACF des résidus carrés pour IG-OU
+                st.subheader("ACF des résidus carrés pour IG-OU")
+                igou_acf = VolatilityPlotter.plot_residuals_acf(returns, igou_returns, "IG-OU")
+                st.pyplot(igou_acf)
             
             if show_bns:
                 st.header("Diagnostic du modèle BNS")
                 bns_diag = VolatilityPlotter.plot_diagnostics(returns, bns_returns, bns_vol_paths, "BNS")
                 st.pyplot(bns_diag)
+                
+                # ACF des résidus carrés pour BNS
+                st.subheader("ACF des résidus carrés pour BNS")
+                bns_acf = VolatilityPlotter.plot_residuals_acf(returns, bns_returns, "BNS")
+                st.pyplot(bns_acf)
+                
+            # Graphique comparatif des ACF des résidus carrés
+            st.header("Comparaison des ACF des résidus carrés")
+            fig_acf_comp, ax_acf_comp = plt.subplots(figsize=(15, 8))
+            plot_residuals_comparison(ax_acf_comp, returns, igou_returns, bs_returns, bns_returns)
+            st.pyplot(fig_acf_comp)
         else:
             st.error("Données insuffisantes pour la simulation")
 
@@ -355,6 +376,12 @@ def plot_residuals_comparison(ax, actual_returns, igou_returns, bs_returns, bns_
     bs_returns = ensure_series(bs_returns)
     bns_returns = ensure_series(bns_returns)
     
+    # Réinitialiser les index pour éviter les problèmes de comparaison
+    actual_returns = actual_returns.reset_index(drop=True)
+    igou_returns = igou_returns.reset_index(drop=True)
+    bs_returns = bs_returns.reset_index(drop=True)
+    bns_returns = bns_returns.reset_index(drop=True)
+    
     # Déterminer la longueur minimale pour calculer les résidus
     min_length = min(len(actual_returns), len(igou_returns), len(bs_returns), len(bns_returns))
     
@@ -365,10 +392,10 @@ def plot_residuals_comparison(ax, actual_returns, igou_returns, bs_returns, bns_
         return
     
     try:
-        # Calculer les résidus carrés pour chaque modèle
-        res_igou = (actual_returns[:min_length] - igou_returns[:min_length])**2
-        res_bs = (actual_returns[:min_length] - bs_returns[:min_length])**2
-        res_bns = (actual_returns[:min_length] - bns_returns[:min_length])**2
+        # Calculer les résidus carrés pour chaque modèle en utilisant les valeurs numpy
+        res_igou = (actual_returns.values[:min_length] - igou_returns.values[:min_length])**2
+        res_bs = (actual_returns.values[:min_length] - bs_returns.values[:min_length])**2
+        res_bns = (actual_returns.values[:min_length] - bns_returns.values[:min_length])**2
         
         # Calculer les autocorrélations
         from statsmodels.tsa.stattools import acf

@@ -327,11 +327,15 @@ class VolatilityPlotter:
             model_returns = pd.Series(model_returns)
             
         try:
+            # Réinitialiser les index pour éviter les problèmes de comparaison
+            actual_returns = actual_returns.reset_index(drop=True)
+            model_returns = model_returns.reset_index(drop=True)
+            
             # Limiter model_returns à la longueur de actual_returns
             min_length = min(len(actual_returns), len(model_returns))
             
-            # Calculer les résidus
-            residuals = actual_returns[:min_length] - model_returns[:min_length]
+            # Calculer les résidus en utilisant les valeurs numpy
+            residuals = actual_returns.values[:min_length] - model_returns.values[:min_length]
             squared_residuals = residuals ** 2
             
             # Tracer l'ACF
