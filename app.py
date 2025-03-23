@@ -23,7 +23,7 @@ def main():
         layout="wide"
     )
     
-    st.title("Prédiction de Prix des Actifs avec Modèles IG-OU et BNS")
+    st.title("Méthodes de l'article WCE2009 en application")
     
     # Get configuration from sidebar
     config = render_sidebar()
