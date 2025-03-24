@@ -1,4 +1,5 @@
 /.venv
+/.vscode
 /pyVenv
 /pyVenv311
 .cpython

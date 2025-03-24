@@ -99,14 +99,15 @@ def estimate_parameters(returns):
     return mu, sigma_sq, lambda_
 
 # Modified function to perform backtesting of prediction models
-def perform_backtesting(data, n_test=30, n_simulations=100):
+def perform_backtesting(data, n_test=30, n_simulations=100, test_data=None):
     """
-    Performs backtesting of prediction models by using historical data to predict the last n_test data points.
+    Performs backtesting of prediction models by using historical data to predict future data points.
     
     Parameters:
-    data (pandas.DataFrame): DataFrame with 'Close' price column
-    n_test (int): Number of data points to use for testing (default: 30)
-    n_simulations (int): Number of Monte Carlo simulations to run (default: 100)
+    data (pandas.DataFrame): DataFrame with 'Close' price column (used as training data)
+    n_test (int): Number of data points to use for testing when test_data is None
+    n_simulations (int): Number of Monte Carlo simulations to run
+    test_data (pandas.DataFrame, optional): Specific test data to use. If None, the last n_test points of data are used
     
     Returns:
     dict: Dictionary with predictions and metrics for both models
@@ -118,14 +119,21 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
     # Remove NaN values from the data before splitting
     data = data.dropna(subset=['Close'])
     
-    # Check if we have enough data after dropping NaNs
-    if len(data) <= n_test:
-        st.error(f"Not enough valid data for backtesting. Need more than {n_test} non-NaN data points.")
-        return None
-    
-    # Split data into training and testing sets
-    train_data = data[:-n_test].copy()
-    test_data = data[-n_test:].copy()
+    # If test_data is provided, use it directly. Otherwise extract from data
+    if test_data is None:
+        # Check if we have enough data after dropping NaNs
+        if len(data) <= n_test:
+            st.error(f"Not enough valid data for backtesting. Need more than {n_test} non-NaN data points.")
+            return None
+        
+        # Split data into training and testing sets
+        train_data = data[:-n_test].copy()
+        test_data = data[-n_test:].copy()
+    else:
+        train_data = data.copy()
+        # Ensure test_data also has no NaN values
+        test_data = test_data.dropna(subset=['Close'])
+        n_test = len(test_data)
     
     # Calculate returns for the training set
     returns = train_data['Close'].pct_change(fill_method=None).dropna()
@@ -220,7 +228,66 @@ def perform_backtesting(data, n_test=30, n_simulations=100):
     else:
         st.error("Not enough valid data points for evaluation after filtering NaN values.")
         return None
-
+    
+# Nouvelle visualisation pour la validation croisée
+def plot_cross_validation(results):
+    """
+    Visualise les résultats de la validation croisée temporelle.
+    
+    Parameters:
+    results (dict): Résultats de la validation croisée temporelle
+    
+    Returns:
+    matplotlib.figure.Figure: Figure matplotlib avec les tracés
+    """
+    n_splits = len(results['predictions'])
+    
+    # Gérer le cas avec un seul split
+    if n_splits == 1:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        axes = [ax]
+    else:
+        # Définition de la taille du graphique en fonction du nombre de splits
+        fig_height = 4 * min(n_splits, 5)  # Limiter la hauteur pour beaucoup de splits
+        fig, axes = plt.subplots(min(n_splits, 5), 1, figsize=(12, fig_height))
+        
+        # Si n_splits > 5, on affiche seulement les 5 premiers
+        if n_splits > 5:
+            st.info(f"Affichage des 5 premiers splits sur {n_splits} pour plus de clarté.")
+    
+    # Assurez-vous que axes est toujours une liste/array même avec un seul subplot
+    if n_splits == 1:
+        axes = [axes]
+    
+    # Boucle sur les premières fenêtres (max 5 pour la clarté)
+    for i, split_data in enumerate(results['predictions'][:min(n_splits, 5)]):
+        ax = axes[i]
+        
+        # Tracer les données
+        ax.plot(range(len(split_data['actual'])), split_data['actual'], 'k-', label='Prix réels')
+        ax.plot(range(len(split_data['igou'])), split_data['igou'], 'r--', label='IG-OU')
+        ax.plot(range(len(split_data['bs'])), split_data['bs'], 'b-.', label='BS')
+        
+        # Calculer l'erreur absolue moyenne pour les deux modèles sur ce split
+        igou_rmse = split_data['metrics']['igou_rmse']
+        bs_rmse = split_data['metrics']['bs_rmse']
+        
+        # Déterminer le meilleur modèle pour ce split
+        best_model = "IG-OU" if igou_rmse < bs_rmse else "Black-Scholes"
+        
+        # Titre et légendes
+        ax.set_title(f"Split {i+1} | Meilleur: {best_model} | RMSE IG-OU: {igou_rmse:.2f}, BS: {bs_rmse:.2f}")
+        ax.grid(True)
+        ax.legend(loc='upper left')
+        
+        # Ajouter des étiquettes aux axes seulement pour le dernier graphique
+        if i == min(n_splits, 5) - 1:
+            ax.set_xlabel('Jours')
+        ax.set_ylabel('Prix')
+    
+    plt.tight_layout()
+    return fig
+    
 # Function to visualize backtesting results
 def plot_backtesting_results(results, n_test=30):
     """
@@ -249,106 +316,210 @@ def plot_backtesting_results(results, n_test=30):
     
     return fig
 
+# Nouvelle fonction de validation croisée temporelle
+def time_series_cross_validate(data, n_splits=5, test_size=30, n_simulations=100):
+    """
+    Effectue une validation croisée temporelle avec fenêtre glissante
+    
+    Paramètres:
+    data (pd.DataFrame): Données historiques
+    n_splits (int): Nombre de splits de validation
+    test_size (int): Taille de la période de test (jours)
+    n_simulations (int): Nombre de simulations Monte Carlo
+    
+    Retourne:
+    dict: Métriques agrégées et prédictions
+    """
+    total_metrics = {
+        'igou': {'rmse': [], 'mae': [], 'mape': [], 'dir_acc': []},
+        'bs': {'rmse': [], 'mae': [], 'mape': [], 'dir_acc': []}
+    }
+    all_predictions = []
+    
+    # Calcul des positions des fenêtres
+    data_length = len(data)
+    min_train_size = data_length - test_size * n_splits
+    if min_train_size < test_size * 2:
+        st.error("Pas assez de données pour la validation croisée")
+        return None
+    
+    # Création des fenêtres glissantes
+    for i in range(n_splits):
+        start_test = data_length - test_size * (i + 1)
+        end_test = start_test + test_size
+        
+        train_data = data.iloc[:start_test]
+        test_data = data.iloc[start_test:end_test]
+        
+        # Entraînement et prédiction
+        results = perform_backtesting(train_data, test_size, n_simulations, test_data)
+        
+        if results:
+            for metric in ['rmse', 'mae', 'mape', 'dir_acc']:
+                total_metrics['igou'][metric].append(results['metrics'][f'igou_{metric}'])
+                total_metrics['bs'][metric].append(results['metrics'][f'bs_{metric}'])
+            
+            all_predictions.append({
+                'split': i+1,
+                'actual': results['actual_prices'],
+                'igou': results['igou_prediction'],
+                'bs': results['bs_prediction']
+            })
+    
+    # Calcul des moyennes
+    avg_metrics = {
+        'igou': {k: np.nanmean(v) for k, v in total_metrics['igou'].items()},
+        'bs': {k: np.nanmean(v) for k, v in total_metrics['bs'].items()}
+    }
+    
+    return {'metrics': avg_metrics, 'predictions': all_predictions}
+
 # Add this to the main function
 def add_backtesting_section(data):
     """
-    Add the backtesting section to the Streamlit app.
+    Add the backtesting section to the Streamlit app with time series cross-validation.
     
     Parameters:
     data (pandas.DataFrame): DataFrame with 'Close' price column
     """
-    st.header("Model Backtesting")
+    st.header("Validation croisée temporelle")
     
-    # Slider for number of test days
-    n_test = st.slider("Number of days to test", 10, 60, 30)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        n_splits = st.number_input("Nombre de splits", 2, 10, 3)
+    with col2:
+        test_size = st.number_input("Taille de test (jours)", 10, 90, 30)
+    with col3:
+        n_simulations = st.number_input("Simulations par split", 50, 1000, 200)
     
-    # Number of simulations for Monte Carlo
-    n_simulations = st.number_input("Number of simulations", 10, 1000, 100)
-    
-    # Check if we have enough data
-    if len(data) <= n_test:
-        st.error(f"Not enough data for backtesting. Need more than {n_test} data points.")
+    if len(data) < test_size * (n_splits + 1):
+        st.error(f"Besoin d'au moins {test_size * (n_splits + 1)} jours de données")
         return
     
-    # Run backtesting
-    with st.spinner("Running backtesting..."):
-        results = perform_backtesting(data, n_test, n_simulations)
-    
-    # Check if results is not None
-    if results is None:
-        return
-    
-    # Plot results
-    fig = plot_backtesting_results(results, n_test)
-    st.pyplot(fig)
-    
-    # Display metrics
-    st.subheader("Performance Metrics")
-    
-    # Create a DataFrame for metrics
-    metrics_df = pd.DataFrame({
-        'Metric': ['RMSE (Root Mean Squared Error)', 
-                   'MAE (Mean Absolute Error)', 
-                   'MAPE (Mean Absolute Percentage Error)',
-                   'Direction Accuracy (%)'],
-        'IG-OU Model': [results['metrics']['igou_rmse'], 
-                       results['metrics']['igou_mae'], 
-                       results['metrics']['igou_mape'],
-                       results['metrics']['igou_dir_acc']],
-        'Black-Scholes Model': [results['metrics']['bs_rmse'], 
-                               results['metrics']['bs_mae'], 
-                               results['metrics']['bs_mape'],
-                               results['metrics']['bs_dir_acc']]
-    })
-    
-    # Format columns with float values
-    for col in ['IG-OU Model', 'Black-Scholes Model']:
-        metrics_df[col] = metrics_df[col].apply(lambda x: f"{x:.4f}")
-    
-    st.table(metrics_df)
-    
-    # Determine the best model based on RMSE
-    best_rmse = min(results['metrics']['igou_rmse'], results['metrics']['bs_rmse'])
-    best_model = "IG-OU" if results['metrics']['igou_rmse'] == best_rmse else "Black-Scholes"
-    
-    st.success(f"Based on RMSE, the {best_model} model performed better for this time period.")
-    
-    # Add interpretation
-    with st.expander("Interpretation of Metrics"):
-        st.markdown("""
-        ### Metrics Explanation:
+    if st.button("Lancer la validation croisée"):
+        with st.spinner("Validation croisée en cours..."):
+            cv_results = time_series_cross_validate(
+                data, 
+                n_splits=n_splits,
+                test_size=test_size,
+                n_simulations=n_simulations
+            )
         
-        - **RMSE (Root Mean Squared Error)**: Measures the square root of the average squared differences between predicted and actual values. 
-          Lower values indicate better performance. RMSE penalizes large errors more than small ones.
-        
-        - **MAE (Mean Absolute Error)**: Measures the average absolute differences between predicted and actual values. 
-          Easier to interpret as it's in the same units as the data. Lower values indicate better performance.
-        
-        - **MAPE (Mean Absolute Percentage Error)**: Expresses error as a percentage of the actual values, making it scale-independent.
-          Lower values indicate better performance. A MAPE of 5% means predictions are on average 5% away from actual values.
-        
-        - **Direction Accuracy**: Percentage of times the model correctly predicted the direction of price movement (up or down).
-          Higher values indicate better performance. A value of 50% is no better than random guessing.
-        
-        ### What to Look For:
-        
-        - The model with lower RMSE, MAE, and MAPE values generally performs better at capturing the price levels.
-        - Direction accuracy is especially important if you're more concerned with predicting price movements than exact values.
-        - Consider the tradeoffs between metrics based on your investment strategy.
-        """)
-    
-    # Show raw data
-    with st.expander("Show Raw Prediction Data"):
-        prediction_df = pd.DataFrame({
-            'Day': range(1, n_test + 1),
-            'Actual Price': results['actual_prices'],
-            'IG-OU Prediction': results['igou_prediction'],
-            'Black-Scholes Prediction': results['bs_prediction'],
-            'IG-OU Error (%)': ((results['igou_prediction'] - results['actual_prices']) / results['actual_prices'] * 100),
-            'BS Error (%)': ((results['bs_prediction'] - results['actual_prices']) / results['actual_prices'] * 100)
-        })
-        st.dataframe(prediction_df)
-
+        if cv_results:
+            st.subheader("Performance moyenne")
+            metrics_df = pd.DataFrame({
+                'Modèle': ['IG-OU', 'Black-Scholes'],
+                'RMSE': [
+                    cv_results['metrics']['igou']['rmse'],
+                    cv_results['metrics']['bs']['rmse']
+                ],
+                'MAE': [
+                    cv_results['metrics']['igou']['mae'],
+                    cv_results['metrics']['bs']['mae']
+                ],
+                'MAPE (%)': [
+                    cv_results['metrics']['igou']['mape'],
+                    cv_results['metrics']['bs']['mape']
+                ],
+                'Précision direction (%)': [
+                    cv_results['metrics']['igou']['dir_acc'],
+                    cv_results['metrics']['bs']['dir_acc']
+                ]
+            }).set_index('Modèle')
+            
+            st.dataframe(metrics_df.style.format("{:.2f}"))
+            
+            # Déterminer le meilleur modèle basé sur le RMSE moyen
+            best_rmse = min(cv_results['metrics']['igou']['rmse'], cv_results['metrics']['bs']['rmse'])
+            best_model = "IG-OU" if cv_results['metrics']['igou']['rmse'] == best_rmse else "Black-Scholes"
+            
+            st.success(f"Sur l'ensemble des {n_splits} splits, le modèle {best_model} a obtenu les meilleures performances (RMSE moyen: {best_rmse:.4f}).")
+            
+            st.subheader("Détails par split")
+            fig = plot_cross_validation(cv_results)
+            st.pyplot(fig)
+            
+            # Ajouter l'analyse de stabilité
+            st.subheader("Analyse de stabilité")
+            rmse_values = [
+                (split['metrics']['igou_rmse'], split['metrics']['bs_rmse']) 
+                for split in cv_results['predictions']
+            ]
+            rmse_df = pd.DataFrame(rmse_values, columns=['IG-OU', 'BS'], 
+                                 index=range(1, len(rmse_values)+1))
+            
+            st.line_chart(rmse_df, use_container_width=True)
+            st.caption("Évolution des RMSE sur les différents splits")
+            
+            # Interprétation de la stabilité
+            with st.expander("Interprétation de la stabilité des modèles"):
+                st.markdown("""
+                ### Analyse de la stabilité des modèles
+                
+                La stabilité d'un modèle prédictif est aussi importante que sa précision moyenne. Un modèle stable 
+                conserve une performance similaire à travers différentes périodes de temps, ce qui indique qu'il 
+                généralise bien aux nouvelles données.
+                
+                #### Comment interpréter le graphique de stabilité:
+                
+                - **Ligne horizontale stable**: Indique que le modèle a une performance constante à travers les différentes périodes.
+                - **Fortes variations**: Suggèrent que le modèle est sensible aux changements dans les données et pourrait être moins fiable.
+                - **Tendance à la hausse**: Le modèle se dégrade progressivement à mesure qu'on recule dans le temps (potentiellement dû à des changements de régime).
+                - **Tendance à la baisse**: Le modèle s'améliore sur les données plus anciennes (rare, mais peut indiquer des conditions plus prévisibles dans le passé).
+                
+                Le modèle le plus fiable est généralement celui qui combine une bonne performance moyenne avec une faible variance entre les splits.
+                """)
+            
+            # Afficher les prédictions détaillées pour un split sélectionné
+            st.subheader("Examiner un split spécifique")
+            selected_split = st.selectbox(
+                "Sélectionner un split à visualiser en détail",
+                options=range(1, len(cv_results['predictions']) + 1)
+            )
+            
+            if selected_split:
+                split_data = cv_results['predictions'][selected_split-1]
+                
+                # Afficher les métriques pour ce split
+                st.write(f"### Métriques pour le split {selected_split}")
+                split_metrics = pd.DataFrame({
+                    'Métrique': ['RMSE', 'MAE', 'MAPE (%)', 'Précision direction (%)'],
+                    'IG-OU': [
+                        split_data['metrics']['igou_rmse'],
+                        split_data['metrics']['igou_mae'],
+                        split_data['metrics']['igou_mape'],
+                        split_data['metrics']['igou_dir_acc']
+                    ],
+                    'Black-Scholes': [
+                        split_data['metrics']['bs_rmse'],
+                        split_data['metrics']['bs_mae'],
+                        split_data['metrics']['bs_mape'],
+                        split_data['metrics']['bs_dir_acc']
+                    ]
+                })
+                
+                # Formater les colonnes numériques
+                for col in ['IG-OU', 'Black-Scholes']:
+                    split_metrics[col] = split_metrics[col].apply(lambda x: f"{x:.4f}")
+                
+                st.table(split_metrics)
+                
+                # Visualiser les prédictions pour ce split
+                fig, ax = plt.subplots(figsize=(12, 8))
+                ax.plot(range(len(split_data['actual'])), split_data['actual'], 'k-', 
+                      label='Prix réels')
+                ax.plot(range(len(split_data['igou'])), split_data['igou'], 'r--', 
+                      label='Prédiction IG-OU')
+                ax.plot(range(len(split_data['bs'])), split_data['bs'], 'b-.', 
+                      label='Prédiction Black-Scholes')
+                ax.set_title(f'Prédictions pour le split {selected_split}')
+                ax.set_xlabel('Jours')
+                ax.set_ylabel('Prix')
+                ax.legend()
+                ax.grid(True)
+                st.pyplot(fig)
+                
+                
 def main():
     st.title("Prédiction de Prix et Volatilité")
     
