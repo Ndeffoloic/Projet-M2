@@ -3,6 +3,7 @@ import streamlit as st
 
 from core.data.loader import VALID_ASSETS, VALID_TIMEFRAMES
 
+
 def render_sidebar() -> dict:
     """Render sidebar with model parameters.
     
@@ -40,11 +41,9 @@ def render_sidebar() -> dict:
     st.sidebar.info("""
     **Note sur les paramètres a et b:**
     
-    Selon l'article WCE 2009 (équation 3.16), les paramètres a et b de la distribution Inverse Gaussienne sont calculés automatiquement à partir de:
-    - a = Ȳ * b / (e^(λh) - 1)
-    - b = sqrt[(Var(Y) * (e^(2λh) - 1)) / (e^(λh) - 1)^3]
-    
-    Ces paramètres ne doivent pas être saisis manuellement.
+    Les paramètres a et b de la distribution Inverse Gaussienne sont calculés à partir des formules (3.16) de l'article WCE 2009, une fois que les donées sont chargées.  
+    C'est pourquoi ils ne peuvent pas être saisis manuellement. 
+    Ils apparaîtront automatiquement ci-dessous. 
     """)
     
     # Afficher les paramètres a et b calculés s'ils existent

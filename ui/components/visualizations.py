@@ -1,8 +1,10 @@
+from typing import List, Optional
+
 import matplotlib.pyplot as plt
-import streamlit as st
 import numpy as np
 import pandas as pd
-from typing import List, Optional
+import streamlit as st
+
 
 class VolatilityPlotter:
     """Génère les visualisations de volatilité selon les figures du document"""
@@ -188,6 +190,7 @@ class VolatilityPlotter:
         if len(returns) > min_data_length:
             try:
                 from scipy import stats
+
                 # Utiliser l'ensemble des données pour le Q-Q plot
                 stats.probplot(returns, dist="norm", plot=axes[1])
                 axes[1].set_title('Q-Q Plot (Normalité des rendements réels)', fontsize=14)
@@ -235,7 +238,7 @@ class VolatilityPlotter:
         
         # Calcul des autocorrélations manuellement pour pouvoir les superposer
         from statsmodels.tsa.stattools import acf
-        
+
         # Calculer l'ACF pour chaque série
         try:
             acf_actual = acf(actual_returns, nlags=max_lags, fft=True)
@@ -252,7 +255,7 @@ class VolatilityPlotter:
             ax.plot(lags_x, acf_bs, 'g-.', label='Black-Scholes', alpha=0.7)
             ax.plot(lags_x, acf_bns, 'm:', label='BNS', alpha=0.7, linewidth=2)
             
-            ax.set_title("Autocorrélation réelle vs estimée (Figure 2)", fontsize=16)
+            ax.set_title("Autocorrélation réelle vs estimée ", fontsize=16)
             ax.set_xlabel("Retards (lags)", fontsize=14)
             ax.set_ylabel("Autocorrélation", fontsize=14)
             ax.grid(True)
@@ -297,7 +300,7 @@ class VolatilityPlotter:
         ax.plot(time_points, bs_returns[:min_length], 'g-.', label='Black-Scholes', alpha=0.7)
         ax.plot(time_points, bns_returns[:min_length], 'm:', label='BNS', alpha=0.7, linewidth=2)
         
-        ax.set_title("Comparaison des rendements historiques et estimés (Figure 6)", fontsize=16)
+        ax.set_title("Comparaison des rendements historiques et estimés ", fontsize=16)
         ax.set_xlabel("Temps", fontsize=14)
         ax.set_ylabel("Rendements", fontsize=14)
         ax.grid(True)
@@ -342,7 +345,7 @@ class VolatilityPlotter:
             from statsmodels.graphics.tsaplots import plot_acf
             plot_acf(squared_residuals, lags=min(40, min_length // 2), ax=ax)
             
-            ax.set_title(f'ACF des résidus carrés ({model_name}) (Figure 8)', fontsize=16)
+            ax.set_title(f'ACF des résidus carrés ({model_name}) ', fontsize=16)
             ax.set_xlabel("Retards (lags)", fontsize=14)
             ax.set_ylabel("Autocorrélation", fontsize=14)
             ax.grid(True)
