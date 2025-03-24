@@ -114,6 +114,245 @@ class VolatilityPlotter:
         st.pyplot(fig)
         plt.close(fig)
 
+    @staticmethod
+    def plot_diagnostics(returns, model_returns, vol_series, model_name="BNS"):
+        """
+        Génère des graphiques de diagnostic pour le modèle 
+        
+        Args:
+            returns: Série temporelle des rendements réels
+            model_returns: Série temporelle des rendements simulés par le modèle
+            vol_series: Série temporelle de la volatilité simulée
+            model_name: Nom du modèle à afficher dans les titres (défaut: "BNS")
+        
+        Returns:
+            matplotlib.figure.Figure: Figure avec les graphiques de diagnostic
+        """
+        # Nettoyage des données - supprimer les valeurs NaN et Inf
+        def clean_data(data):
+            if data is None:
+                return None
+            try:
+                # Conversion en array numpy et aplatissement
+                np_array = np.array(data, dtype=float)
+                flattened = np_array.ravel()  # Convertit en 1D quel que soit l'input
+                finite_mask = np.isfinite(flattened)
+                
+                if not np.any(finite_mask):
+                    return None
+                    
+                cleaned = pd.Series(flattened[finite_mask])
+                return cleaned if not cleaned.empty else None
+                
+            except Exception as e:
+                print(f"Erreur de nettoyage: {str(e)}")
+                return None
+                
+        # Nettoyer toutes les séries
+        returns = clean_data(returns)
+        model_returns = clean_data(model_returns)
+        
+        # Ne nettoyer vol_series que si elle n'est pas None
+        if vol_series is not None:
+            vol_series = clean_data(vol_series)
+        
+        # Utiliser une figure plus grande pour les graphiques
+        fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+        
+        # Vérification que nous avons assez de données
+        min_data_length = 2  # Minimum requis pour l'autocorrélation
+        has_enough_data = len(model_returns) > min_data_length
+        
+        # Graphique 1: Comparaison des distributions de rendements
+        if len(returns) > 0 and len(model_returns) > 0:
+            try:
+                # Déterminer des limites raisonnables pour les histogrammes
+                min_val = max(min(returns.min(), model_returns.min()), -5)
+                max_val = min(max(returns.max(), model_returns.max()), 5)
+                
+                bins = np.linspace(min_val, max_val, min(30, len(model_returns)))
+                
+                axes[0].hist(returns, bins=bins, alpha=0.5, label='Données réelles', density=True)
+                axes[0].hist(model_returns, bins=bins, alpha=0.5, label=f'Modèle {model_name}', density=True)
+                axes[0].set_title('Distribution des rendements', fontsize=14)
+                axes[0].legend(fontsize=12)
+            except Exception as e:
+                axes[0].text(0.5, 0.5, f"Erreur d'histogramme: {str(e)}", 
+                            ha='center', va='center', transform=axes[0].transAxes)
+        else:
+            axes[0].text(0.5, 0.5, "Données insuffisantes pour l'histogramme", 
+                        ha='center', va='center', transform=axes[0].transAxes)
+        axes[0].grid(True)
+        
+        # Graphique 2: Q-Q Plot
+        if len(returns) > min_data_length:
+            try:
+                from scipy import stats
+                # Utiliser l'ensemble des données pour le Q-Q plot
+                stats.probplot(returns, dist="norm", plot=axes[1])
+                axes[1].set_title('Q-Q Plot (Normalité des rendements réels)', fontsize=14)
+            except Exception as e:
+                axes[1].text(0.5, 0.5, f"Erreur de Q-Q plot: {str(e)}", 
+                            ha='center', va='center', transform=axes[1].transAxes)
+        else:
+            axes[1].text(0.5, 0.5, "Données insuffisantes pour le Q-Q Plot", 
+                        ha='center', va='center', transform=axes[1].transAxes)
+        axes[1].grid(True)
+        
+        plt.tight_layout()
+        return fig
+
+    @staticmethod
+    def plot_autocorrelation_comparison(actual_returns, igou_returns, bs_returns, bns_returns, lags=40):
+        """Figure 2: True vs Estimated Autocorrelation
+        
+        Args:
+            actual_returns: Rendements réels observés
+            igou_returns: Rendements simulés par le modèle IG-OU
+            bs_returns: Rendements simulés par le modèle Black-Scholes
+            bns_returns: Rendements simulés par le modèle BNS
+            lags: Nombre de retards pour l'autocorrélation
+            
+        Returns:
+            matplotlib.figure.Figure: Figure avec les autocorrélations comparées
+        """
+        fig, ax = plt.subplots(figsize=(15, 8))
+        
+        # S'assurer que les séries sont des pd.Series
+        def ensure_series(data):
+            if not isinstance(data, pd.Series):
+                return pd.Series(data)
+            return data
+            
+        actual_returns = ensure_series(actual_returns)
+        igou_returns = ensure_series(igou_returns)
+        bs_returns = ensure_series(bs_returns)
+        bns_returns = ensure_series(bns_returns)
+        
+        # Limiter lags à la moitié de la longueur des données minimale
+        min_length = min(len(actual_returns), len(igou_returns), len(bs_returns), len(bns_returns))
+        max_lags = min(lags, min_length // 2)
+        
+        # Calcul des autocorrélations manuellement pour pouvoir les superposer
+        from statsmodels.tsa.stattools import acf
+        
+        # Calculer l'ACF pour chaque série
+        try:
+            acf_actual = acf(actual_returns, nlags=max_lags, fft=True)
+            acf_igou = acf(igou_returns, nlags=max_lags, fft=True)
+            acf_bs = acf(bs_returns, nlags=max_lags, fft=True)
+            acf_bns = acf(bns_returns, nlags=max_lags, fft=True)
+            
+            # Créer l'axe des x
+            lags_x = range(len(acf_actual))
+            
+            # Tracer les autocorrélations
+            ax.stem(lags_x, acf_actual, markerfmt='bo', linefmt='b-', basefmt='b-', label='Données réelles')
+            ax.plot(lags_x, acf_igou, 'r--', label='IG-OU', alpha=0.7)
+            ax.plot(lags_x, acf_bs, 'g-.', label='Black-Scholes', alpha=0.7)
+            ax.plot(lags_x, acf_bns, 'm:', label='BNS', alpha=0.7, linewidth=2)
+            
+            ax.set_title("Autocorrélation réelle vs estimée (Figure 2)", fontsize=16)
+            ax.set_xlabel("Retards (lags)", fontsize=14)
+            ax.set_ylabel("Autocorrélation", fontsize=14)
+            ax.grid(True)
+            ax.legend(fontsize=12)
+        except Exception as e:
+            ax.text(0.5, 0.5, f"Erreur lors du calcul des autocorrélations: {str(e)}", 
+                    ha='center', va='center', transform=ax.transAxes)
+        
+        plt.tight_layout()
+        return fig
+
+    @staticmethod
+    def plot_returns_comparison(actual_returns, igou_returns, bs_returns, bns_returns):
+        """Figure 6: Historical vs Estimated Returns
+        
+        Args:
+            actual_returns: Rendements réels observés
+            igou_returns: Rendements simulés par le modèle IG-OU
+            bs_returns: Rendements simulés par le modèle Black-Scholes
+            bns_returns: Rendements simulés par le modèle BNS
+            
+        Returns:
+            matplotlib.figure.Figure: Figure avec les rendements comparés
+        """
+        fig, ax = plt.subplots(figsize=(15, 8))
+        
+        # Convertir en numpy arrays si ce n'est pas déjà le cas
+        actual_returns = np.array(actual_returns)
+        igou_returns = np.array(igou_returns)
+        bs_returns = np.array(bs_returns)
+        bns_returns = np.array(bns_returns)
+        
+        # Déterminer la longueur minimale pour l'affichage
+        min_length = min(len(actual_returns), len(igou_returns), len(bs_returns), len(bns_returns))
+        
+        # Créer les points temporels
+        time_points = np.arange(min_length)
+        
+        # Tracer les rendements
+        ax.plot(time_points, actual_returns[:min_length], 'b-', label='Rendements réels', linewidth=1)
+        ax.plot(time_points, igou_returns[:min_length], 'r--', label='IG-OU', alpha=0.7)
+        ax.plot(time_points, bs_returns[:min_length], 'g-.', label='Black-Scholes', alpha=0.7)
+        ax.plot(time_points, bns_returns[:min_length], 'm:', label='BNS', alpha=0.7, linewidth=2)
+        
+        ax.set_title("Comparaison des rendements historiques et estimés (Figure 6)", fontsize=16)
+        ax.set_xlabel("Temps", fontsize=14)
+        ax.set_ylabel("Rendements", fontsize=14)
+        ax.grid(True)
+        ax.legend(fontsize=12)
+        
+        plt.tight_layout()
+        return fig
+
+    @staticmethod
+    def plot_residuals_acf(actual_returns, model_returns, model_name):
+        """Figure 8: ACF of Squared Residuals
+        
+        Args:
+            actual_returns: Rendements réels observés
+            model_returns: Rendements simulés par le modèle
+            model_name: Nom du modèle à afficher
+            
+        Returns:
+            matplotlib.figure.Figure: Figure avec l'ACF des résidus carrés
+        """
+        fig, ax = plt.subplots(figsize=(15, 8))
+        
+        # Convertir en séries si nécessaire
+        if not isinstance(actual_returns, pd.Series):
+            actual_returns = pd.Series(actual_returns)
+        if not isinstance(model_returns, pd.Series):
+            model_returns = pd.Series(model_returns)
+            
+        try:
+            # Réinitialiser les index pour éviter les problèmes de comparaison
+            actual_returns = actual_returns.reset_index(drop=True)
+            model_returns = model_returns.reset_index(drop=True)
+            
+            # Limiter model_returns à la longueur de actual_returns
+            min_length = min(len(actual_returns), len(model_returns))
+            
+            # Calculer les résidus en utilisant les valeurs numpy
+            residuals = actual_returns.values[:min_length] - model_returns.values[:min_length]
+            squared_residuals = residuals ** 2
+            
+            # Tracer l'ACF
+            from statsmodels.graphics.tsaplots import plot_acf
+            plot_acf(squared_residuals, lags=min(40, min_length // 2), ax=ax)
+            
+            ax.set_title(f'ACF des résidus carrés ({model_name}) (Figure 8)', fontsize=16)
+            ax.set_xlabel("Retards (lags)", fontsize=14)
+            ax.set_ylabel("Autocorrélation", fontsize=14)
+            ax.grid(True)
+        except Exception as e:
+            ax.text(0.5, 0.5, f"Erreur lors du calcul de l'ACF des résidus: {str(e)}", 
+                    ha='center', va='center', transform=ax.transAxes)
+        
+        plt.tight_layout()
+        return fig
+
 def plot_predictions(ax, price_paths: List[List[float]], bs_prices: List[float]):
     """Plot price predictions for both models.
     
