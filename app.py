@@ -125,9 +125,9 @@ def main():
                 st.pyplot(bs_diag)
                 
                 # ACF des résidus carrés pour Black-Scholes
-                st.subheader("ACF des résidus carrés pour Black-Scholes")
-                bs_acf = VolatilityPlotter.plot_residuals_acf(returns, bs_returns, "Black-Scholes")
-                st.pyplot(bs_acf)
+                # st.subheader("ACF des résidus carrés pour Black-Scholes")
+                # bs_acf = VolatilityPlotter.plot_residuals_acf(returns, bs_returns, "Black-Scholes")
+                # st.pyplot(bs_acf)
             
             if show_igou:
                 st.header("Diagnostic du modèle IG-OU")
@@ -135,9 +135,9 @@ def main():
                 st.pyplot(igou_diag)
                 
                 # ACF des résidus carrés pour IG-OU
-                st.subheader("ACF des résidus carrés pour IG-OU")
-                igou_acf = VolatilityPlotter.plot_residuals_acf(returns, igou_returns, "IG-OU")
-                st.pyplot(igou_acf)
+                # st.subheader("ACF des résidus carrés pour IG-OU")
+                # igou_acf = VolatilityPlotter.plot_residuals_acf(returns, igou_returns, "IG-OU")
+                # st.pyplot(igou_acf)
             
             if show_bns:
                 st.header("Diagnostic du modèle BNS")
@@ -145,9 +145,9 @@ def main():
                 st.pyplot(bns_diag)
                 
                 # ACF des résidus carrés pour BNS
-                st.subheader("ACF des résidus carrés pour BNS")
-                bns_acf = VolatilityPlotter.plot_residuals_acf(returns, bns_returns, "BNS")
-                st.pyplot(bns_acf)
+                # st.subheader("ACF des résidus carrés pour BNS")
+                # bns_acf = VolatilityPlotter.plot_residuals_acf(returns, bns_returns, "BNS")
+                # st.pyplot(bns_acf)
                 
             # Tableau comparatif des statistiques descriptives (Table 1)
             st.header("Comparaison des statistiques descriptives")
