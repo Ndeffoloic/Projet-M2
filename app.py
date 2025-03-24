@@ -23,7 +23,7 @@ def main():
         layout="wide"
     )
     
-    st.title("Méthodes de l'article WCE2009 en application")
+    st.title("Estimation Bayésienne de Modèles à Volatilité Stochastique")
     
     # Get configuration from sidebar
     config = render_sidebar()
@@ -95,7 +95,7 @@ def main():
             st.header("Analyse Comparative selon WCE 2009")
             
             # Figure 2: Autocorrélation
-            st.subheader("Figure 2: Autocorrélation réelle vs estimée")
+            st.subheader("Autocorrélation réelle vs estimée")
             fig_autocorr = VolatilityPlotter.plot_autocorrelation_comparison(
                 actual_returns=returns,
                 igou_returns=igou_returns,
@@ -105,7 +105,7 @@ def main():
             st.pyplot(fig_autocorr)
             
             # Figure 6: Rendements
-            st.subheader("Figure 6: Comparaison des rendements historiques et estimés")
+            st.subheader("Comparaison des rendements historiques et estimés")
             fig_returns = VolatilityPlotter.plot_returns_comparison(
                 actual_returns=returns.values,
                 igou_returns=igou_returns,
@@ -150,7 +150,7 @@ def main():
                 st.pyplot(bns_acf)
                 
             # Tableau comparatif des statistiques descriptives (Table 1)
-            st.header("Comparaison des statistiques descriptives (Table 1)")
+            st.header("Comparaison des statistiques descriptives")
             
             # Calculer les statistiques pour chaque série
             actual_stats = calculate_descriptive_stats(returns, "Actual Returns")
