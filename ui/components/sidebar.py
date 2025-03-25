@@ -1,47 +1,47 @@
-"""Sidebar component for parameter configuration."""
+"""Composant de barre latérale pour la configuration des paramètres."""
 import streamlit as st
 
 from core.data.loader import VALID_ASSETS, VALID_TIMEFRAMES
 
 
 def render_sidebar() -> dict:
-    """Render sidebar with model parameters.
+    """Affiche la barre latérale avec les paramètres du modèle.
     
     Returns:
-        dict: Configuration parameters
+        dict: Paramètres de configuration
     """
-    st.sidebar.title("Model Parameters")
+    st.sidebar.title("Paramètres du Modèle")
     
-    # Asset selection
-    asset = st.sidebar.selectbox(
-        "Select Asset",
+    # Sélection de l'actif
+    actif = st.sidebar.selectbox(
+        "Sélectionner l'Actif",
         options=VALID_ASSETS,
-        help="Choose the asset to analyze"
+        help="Choisissez l'actif à analyser"
     )
     
-    # Timeframe selection
-    timeframe = st.sidebar.selectbox(
-        "Select Timeframe",
+    # Sélection de l'intervalle de temps
+    intervalle_temps = st.sidebar.selectbox(
+        "Sélectionner l'Intervalle de Temps",
         options=VALID_TIMEFRAMES,
-        help="Choose the data timeframe"
+        help="Choisissez l'intervalle de temps des données"
     )
     
-    # Model parameters
-    st.sidebar.subheader("IG-OU Parameters")
+    # Paramètres du modèle
+    st.sidebar.subheader("Paramètres IG-OU")
     
     n_simulations = st.sidebar.number_input(
-        "Number of Simulations",
+        "Nombre de Simulations",
         min_value=1,
         max_value=1000,
         value=100,
-        help="Number of Monte Carlo simulations"
+        help="Nombre de simulations Monte Carlo"
     )
     
     # Note explicative sur les paramètres a et b
     st.sidebar.info("""
     **Note sur les paramètres a et b:**
     
-    Les paramètres a et b de la distribution Inverse Gaussienne sont calculés à partir des formules (3.16) de l'article WCE 2009, une fois que les donées sont chargées.  
+    Les paramètres a et b de la distribution Inverse Gaussienne sont calculés à partir des formules (3.16) de l'article WCE 2009, une fois que les données sont chargées.  
     C'est pourquoi ils ne peuvent pas être saisis manuellement. 
     Ils apparaîtront automatiquement ci-dessous. 
     """)
@@ -53,7 +53,7 @@ def render_sidebar() -> dict:
         st.sidebar.metric("Paramètre b", f"{st.session_state['ig_param_b']:.10f}")
     
     return {
-        "asset": asset,
-        "timeframe": timeframe,
+        "actif": actif,
+        "intervalle_temps": intervalle_temps,
         "n_simulations": n_simulations
     }
