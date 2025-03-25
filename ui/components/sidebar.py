@@ -10,7 +10,7 @@ def render_sidebar() -> dict:
     Returns:
         dict: Configuration parameters
     """
-    st.sidebar.title("Model Parameters")
+    st.sidebar.title("Paramètres de la simulation")
     
     # Asset selection
     asset = st.sidebar.selectbox(
@@ -27,7 +27,7 @@ def render_sidebar() -> dict:
     )
     
     # Model parameters
-    st.sidebar.subheader("IG-OU Parameters")
+    st.sidebar.subheader("Paramètres des modèles")
     
     n_simulations = st.sidebar.number_input(
         "Simulations de Monte Carlo",
