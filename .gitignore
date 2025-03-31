@@ -4,3 +4,5 @@
 /pyVenv311
 .cpython
 *.*.pyc
+
+/Résultats/graphs
