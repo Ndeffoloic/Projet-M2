@@ -23,7 +23,7 @@ def main():
         layout="wide"
     )
     
-    st.title("Prédiction de Prix des Actifs avec Modèles IG-OU et BNS")
+    st.title("Estimation Bayésienne de Modèles à Volatilité Stochastique")
     
     # Get configuration from sidebar
     config = render_sidebar()
@@ -51,13 +51,9 @@ def main():
         else:
             price_df = pd.DataFrame({'Price': price_series})
     
-    # Estimate parameters
-    mu, sigma_sq, lambda_ = ParameterEstimator.estimate_igou_parameters(price_df)
+    # Estimate parameters with improved method
+    mu, sigma_sq, lambda_, a, b = ParameterEstimator.estimate_igou_parameters(price_df)
     bs_mu, bs_sigma = ParameterEstimator.estimate_bs_parameters(price_df)
-    
-    # Déterminer quelle colonne de prix est disponible
-    price_col = 'Close' if 'Close' in price_df.columns else 'Price'
-    a, b = ParameterEstimator.estimate_ig_ab(price_df[price_col], lambda_)
     
     # Stocker les paramètres a et b dans la session state pour affichage dans la sidebar
     st.session_state['ig_param_a'] = a
@@ -66,7 +62,10 @@ def main():
     # Initialize models
     igou_model = IGOUModel(lambda_=lambda_, a=a, b=b)
     bs_model = BlackScholesModel(bs_mu, bs_sigma)
-    bns_model = BNSModel(igou_model, mu=mu, beta=0.5)  # Beta from paper
+    
+    # Initialiser le modèle BNS avec la nouvelle implémentation
+    # Utiliser un paramètre de levier (rho) négatif pour capturer l'effet de levier
+    bns_model = BNSModel(lambda_=lambda_, a=a, b=b, mu=mu, rho=-0.5)
     
     # Run simulations
     if st.button("Lancer la simulation"):
@@ -96,7 +95,7 @@ def main():
             st.header("Analyse Comparative selon WCE 2009")
             
             # Figure 2: Autocorrélation
-            st.subheader("Figure 2: Autocorrélation réelle vs estimée")
+            st.subheader("Autocorrélation réelle vs estimée")
             fig_autocorr = VolatilityPlotter.plot_autocorrelation_comparison(
                 actual_returns=returns,
                 igou_returns=igou_returns,
@@ -106,7 +105,7 @@ def main():
             st.pyplot(fig_autocorr)
             
             # Figure 6: Rendements
-            st.subheader("Figure 6: Comparaison des rendements historiques et estimés")
+            st.subheader("Comparaison des rendements historiques et estimés")
             fig_returns = VolatilityPlotter.plot_returns_comparison(
                 actual_returns=returns.values,
                 igou_returns=igou_returns,
@@ -126,9 +125,9 @@ def main():
                 st.pyplot(bs_diag)
                 
                 # ACF des résidus carrés pour Black-Scholes
-                st.subheader("ACF des résidus carrés pour Black-Scholes")
-                bs_acf = VolatilityPlotter.plot_residuals_acf(returns, bs_returns, "Black-Scholes")
-                st.pyplot(bs_acf)
+                # st.subheader("ACF des résidus carrés pour Black-Scholes")
+                # bs_acf = VolatilityPlotter.plot_residuals_acf(returns, bs_returns, "Black-Scholes")
+                # st.pyplot(bs_acf)
             
             if show_igou:
                 st.header("Diagnostic du modèle IG-OU")
@@ -136,9 +135,9 @@ def main():
                 st.pyplot(igou_diag)
                 
                 # ACF des résidus carrés pour IG-OU
-                st.subheader("ACF des résidus carrés pour IG-OU")
-                igou_acf = VolatilityPlotter.plot_residuals_acf(returns, igou_returns, "IG-OU")
-                st.pyplot(igou_acf)
+                # st.subheader("ACF des résidus carrés pour IG-OU")
+                # igou_acf = VolatilityPlotter.plot_residuals_acf(returns, igou_returns, "IG-OU")
+                # st.pyplot(igou_acf)
             
             if show_bns:
                 st.header("Diagnostic du modèle BNS")
@@ -146,12 +145,12 @@ def main():
                 st.pyplot(bns_diag)
                 
                 # ACF des résidus carrés pour BNS
-                st.subheader("ACF des résidus carrés pour BNS")
-                bns_acf = VolatilityPlotter.plot_residuals_acf(returns, bns_returns, "BNS")
-                st.pyplot(bns_acf)
+                # st.subheader("ACF des résidus carrés pour BNS")
+                # bns_acf = VolatilityPlotter.plot_residuals_acf(returns, bns_returns, "BNS")
+                # st.pyplot(bns_acf)
                 
             # Tableau comparatif des statistiques descriptives (Table 1)
-            st.header("Comparaison des statistiques descriptives (Table 1)")
+            st.header("Comparaison des statistiques descriptives")
             
             # Calculer les statistiques pour chaque série
             actual_stats = calculate_descriptive_stats(returns, "Actual Returns")

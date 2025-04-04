@@ -1,8 +1,11 @@
+from typing import List, Optional
+
 import matplotlib.pyplot as plt
-import streamlit as st
 import numpy as np
 import pandas as pd
-from typing import List, Optional
+import streamlit as st
+from scipy import stats
+
 
 class VolatilityPlotter:
     """Génère les visualisations de volatilité selon les figures du document"""
@@ -113,20 +116,20 @@ class VolatilityPlotter:
         plt.tight_layout()
         st.pyplot(fig)
         plt.close(fig)
-
+        
     @staticmethod
     def plot_diagnostics(returns, model_returns, vol_series, model_name="BNS"):
         """
-        Génère des graphiques de diagnostic pour le modèle 
+        Génère des graphiques de diagnostic pour le modèle en disposition 2x2
         
         Args:
             returns: Série temporelle des rendements réels
             model_returns: Série temporelle des rendements simulés par le modèle
-            vol_series: Série temporelle de la volatilité simulée
+            vol_series: Série temporelle de la volatilité simulée (optionnel)
             model_name: Nom du modèle à afficher dans les titres (défaut: "BNS")
         
         Returns:
-            matplotlib.figure.Figure: Figure avec les graphiques de diagnostic
+            matplotlib.figure.Figure: Figure avec les graphiques de diagnostic organisés en grille 2x2
         """
         # Nettoyage des données - supprimer les valeurs NaN et Inf
         def clean_data(data):
@@ -156,15 +159,14 @@ class VolatilityPlotter:
         if vol_series is not None:
             vol_series = clean_data(vol_series)
         
-        # Utiliser une figure plus grande pour les graphiques
-        fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+        # Créer une grille 2x2 de graphiques
+        fig, axes = plt.subplots(2, 2, figsize=(24, 16))
         
         # Vérification que nous avons assez de données
         min_data_length = 2  # Minimum requis pour l'autocorrélation
-        has_enough_data = len(model_returns) > min_data_length
         
-        # Graphique 1: Comparaison des distributions de rendements
-        if len(returns) > 0 and len(model_returns) > 0:
+        # Graphique 1: Comparaison des distributions de rendements (en haut à gauche)
+        if returns is not None and model_returns is not None and len(returns) > 0 and len(model_returns) > 0:
             try:
                 # Déterminer des limites raisonnables pour les histogrammes
                 min_val = max(min(returns.min(), model_returns.min()), -5)
@@ -172,32 +174,70 @@ class VolatilityPlotter:
                 
                 bins = np.linspace(min_val, max_val, min(30, len(model_returns)))
                 
-                axes[0].hist(returns, bins=bins, alpha=0.5, label='Données réelles', density=True)
-                axes[0].hist(model_returns, bins=bins, alpha=0.5, label=f'Modèle {model_name}', density=True)
-                axes[0].set_title('Distribution des rendements', fontsize=14)
-                axes[0].legend(fontsize=12)
+                axes[0, 0].hist(returns, bins=bins, alpha=0.5, label='Données réelles', density=True)
+                axes[0, 0].hist(model_returns, bins=bins, alpha=0.5, label=f'Modèle {model_name}', density=True)
+                axes[0, 0].set_title('Distribution des rendements', fontsize=14)
+                axes[0, 0].legend(fontsize=12)
+                axes[0, 0].grid(True)
             except Exception as e:
-                axes[0].text(0.5, 0.5, f"Erreur d'histogramme: {str(e)}", 
-                            ha='center', va='center', transform=axes[0].transAxes)
+                axes[0, 0].text(0.5, 0.5, f"Erreur d'histogramme: {str(e)}", 
+                            ha='center', va='center', transform=axes[0, 0].transAxes)
         else:
-            axes[0].text(0.5, 0.5, "Données insuffisantes pour l'histogramme", 
-                        ha='center', va='center', transform=axes[0].transAxes)
-        axes[0].grid(True)
+            axes[0, 0].text(0.5, 0.5, "Données insuffisantes pour l'histogramme", 
+                        ha='center', va='center', transform=axes[0, 0].transAxes)
         
-        # Graphique 2: Q-Q Plot
-        if len(returns) > min_data_length:
+        # Graphique 2: Q-Q Plot des rendements réels (en haut à droite)
+        if returns is not None and len(returns) > min_data_length:
             try:
                 from scipy import stats
-                # Utiliser l'ensemble des données pour le Q-Q plot
-                stats.probplot(returns, dist="norm", plot=axes[1])
-                axes[1].set_title('Q-Q Plot (Normalité des rendements réels)', fontsize=14)
+                stats.probplot(returns, dist="norm", plot=axes[0, 1])
+                axes[0, 1].set_title('Q-Q Plot (Normalité des rendements réels)', fontsize=14)
+                axes[0, 1].grid(True)
             except Exception as e:
-                axes[1].text(0.5, 0.5, f"Erreur de Q-Q plot: {str(e)}", 
-                            ha='center', va='center', transform=axes[1].transAxes)
+                axes[0, 1].text(0.5, 0.5, f"Erreur de Q-Q plot: {str(e)}", 
+                            ha='center', va='center', transform=axes[0, 1].transAxes)
         else:
-            axes[1].text(0.5, 0.5, "Données insuffisantes pour le Q-Q Plot", 
-                        ha='center', va='center', transform=axes[1].transAxes)
-        axes[1].grid(True)
+            axes[0, 1].text(0.5, 0.5, "Données insuffisantes pour le Q-Q Plot des rendements réels", 
+                        ha='center', va='center', transform=axes[0, 1].transAxes)
+        
+        # Graphique 3: Q-Q Plot des rendements modélisés (en bas à gauche)
+        if model_returns is not None and len(model_returns) > min_data_length:
+            try:
+                from scipy import stats
+                stats.probplot(model_returns, dist="norm", plot=axes[1, 0])
+                axes[1, 0].set_title(f'Q-Q Plot (Normalité des rendements {model_name})', fontsize=14)
+                axes[1, 0].grid(True)
+            except Exception as e:
+                axes[1, 0].text(0.5, 0.5, f"Erreur de Q-Q plot: {str(e)}", 
+                            ha='center', va='center', transform=axes[1, 0].transAxes)
+        else:
+            axes[1, 0].text(0.5, 0.5, "Données insuffisantes pour le Q-Q Plot des rendements du modèle", 
+                        ha='center', va='center', transform=axes[1, 0].transAxes)
+        
+        # Graphique 4: ACF des résidus carrés (en bas à droite)
+        if returns is not None and model_returns is not None and len(returns) > min_data_length and len(model_returns) > min_data_length:
+            try:
+                # Réinitialiser les index pour éviter les problèmes de comparaison
+                returns_reset = returns.reset_index(drop=True)
+                model_returns_reset = model_returns.reset_index(drop=True)
+                
+                # Limiter à la longueur minimale
+                min_length = min(len(returns_reset), len(model_returns_reset))
+                
+                # Calculer les résidus
+                residuals = returns_reset.values[:min_length] - model_returns_reset.values[:min_length]
+                squared_residuals = residuals ** 2
+                
+                from statsmodels.graphics.tsaplots import plot_acf
+                plot_acf(squared_residuals, lags=min(40, len(squared_residuals)//2), ax=axes[1, 1])
+                axes[1, 1].set_title(f'ACF des résidus carrés ({model_name})', fontsize=14)
+                axes[1, 1].grid(True)
+            except Exception as e:
+                axes[1, 1].text(0.5, 0.5, f"Erreur d'ACF: {str(e)}", 
+                            ha='center', va='center', transform=axes[1, 1].transAxes)
+        else:
+            axes[1, 1].text(0.5, 0.5, "Données insuffisantes pour le calcul de l'ACF des résidus", 
+                        ha='center', va='center', transform=axes[1, 1].transAxes)
         
         plt.tight_layout()
         return fig
@@ -235,7 +275,7 @@ class VolatilityPlotter:
         
         # Calcul des autocorrélations manuellement pour pouvoir les superposer
         from statsmodels.tsa.stattools import acf
-        
+
         # Calculer l'ACF pour chaque série
         try:
             acf_actual = acf(actual_returns, nlags=max_lags, fft=True)
@@ -252,7 +292,7 @@ class VolatilityPlotter:
             ax.plot(lags_x, acf_bs, 'g-.', label='Black-Scholes', alpha=0.7)
             ax.plot(lags_x, acf_bns, 'm:', label='BNS', alpha=0.7, linewidth=2)
             
-            ax.set_title("Autocorrélation réelle vs estimée (Figure 2)", fontsize=16)
+            ax.set_title("Autocorrélation réelle vs estimée ", fontsize=16)
             ax.set_xlabel("Retards (lags)", fontsize=14)
             ax.set_ylabel("Autocorrélation", fontsize=14)
             ax.grid(True)
@@ -297,7 +337,7 @@ class VolatilityPlotter:
         ax.plot(time_points, bs_returns[:min_length], 'g-.', label='Black-Scholes', alpha=0.7)
         ax.plot(time_points, bns_returns[:min_length], 'm:', label='BNS', alpha=0.7, linewidth=2)
         
-        ax.set_title("Comparaison des rendements historiques et estimés (Figure 6)", fontsize=16)
+        ax.set_title("Comparaison des rendements historiques et estimés ", fontsize=16)
         ax.set_xlabel("Temps", fontsize=14)
         ax.set_ylabel("Rendements", fontsize=14)
         ax.grid(True)
@@ -342,7 +382,7 @@ class VolatilityPlotter:
             from statsmodels.graphics.tsaplots import plot_acf
             plot_acf(squared_residuals, lags=min(40, min_length // 2), ax=ax)
             
-            ax.set_title(f'ACF des résidus carrés ({model_name}) (Figure 8)', fontsize=16)
+            ax.set_title(f'ACF des résidus carrés ({model_name}) ', fontsize=16)
             ax.set_xlabel("Retards (lags)", fontsize=14)
             ax.set_ylabel("Autocorrélation", fontsize=14)
             ax.grid(True)

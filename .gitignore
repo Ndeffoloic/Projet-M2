@@ -1,5 +1,8 @@
 /.venv
+/.vscode
 /pyVenv
 /pyVenv311
 .cpython
 *.*.pyc
+
+/Résultats/graphs
