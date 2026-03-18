@@ -14,3 +14,4 @@ pytest-mock>=3.10.0
 statsmodels>=0.13
 seaborn>=0.12
 setuptools>=68.0.0
+pillow>12.1.1
